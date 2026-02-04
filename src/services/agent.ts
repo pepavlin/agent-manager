@@ -60,12 +60,20 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
     threadIdToUse = newThread.id;
     logger.debug({ threadId: threadIdToUse }, 'Created new thread');
   } else {
-    // Verify thread exists
+    // Try to find existing thread, create with specified ID if not found
     const existingThread = await prisma.thread.findUnique({
       where: { id: threadIdToUse },
     });
     if (!existingThread) {
-      throw new NotFoundError('Thread', threadIdToUse);
+      logger.debug({ threadId: threadIdToUse }, 'Thread not found, creating with specified ID');
+      await prisma.thread.create({
+        data: {
+          id: threadIdToUse,
+          projectId: project_id,
+          userId: user_id,
+        },
+      });
+      logger.debug({ threadId: threadIdToUse }, 'Created new thread with specified ID');
     }
   }
 

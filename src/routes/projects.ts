@@ -17,7 +17,25 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ['Projects'],
       summary: 'Create a new project',
-      description: 'Create a new project with a name and role statement for the AI agent',
+      description: `Create a new project with a name and role statement for the AI agent.
+
+**Example request:**
+\`\`\`json
+{
+  "name": "E-commerce Platform",
+  "roleStatement": "You are a project manager for an e-commerce platform. Help track tasks, manage sprints, and coordinate between teams."
+}
+\`\`\`
+
+**Example response:**
+\`\`\`json
+{
+  "id": "clx1234567890abcdef",
+  "name": "E-commerce Platform",
+  "role_statement": "You are a project manager...",
+  "created_at": "2024-01-15T10:30:00.000Z"
+}
+\`\`\``,
       body: CreateProjectBody,
       response: {
         201: {
@@ -62,7 +80,30 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ['Documents'],
       summary: 'Upload a document',
-      description: 'Upload a document to a project. Supports text/plain, text/markdown, and application/pdf files.',
+      description: `Upload a document to a project knowledge base. The document will be chunked, embedded, and indexed for RAG retrieval.
+
+**Supported file types:** text/plain, text/markdown, application/pdf
+
+**Categories:**
+- \`FACTS\` - General project information, documentation, specs
+- \`RULES\` - Playbook rules, guidelines, processes the agent should follow
+- \`STATE\` - Current project state, status updates, meeting notes
+
+**Form fields:**
+- \`file\` - The document file (required)
+- \`category\` - One of FACTS, RULES, STATE (required)
+
+**Example response:**
+\`\`\`json
+{
+  "id": "doc_abc123",
+  "project_id": "clx1234567890abcdef",
+  "category": "FACTS",
+  "filename": "project-requirements.md",
+  "chunks_count": 12,
+  "status": "indexed"
+}
+\`\`\``,
       consumes: ['multipart/form-data'],
       params: {
         type: 'object',

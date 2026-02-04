@@ -13,7 +13,47 @@ export async function toolRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ['Tools'],
       summary: 'Submit tool execution result',
-      description: 'Submit the result of a tool execution (called by n8n after executing a tool)',
+      description: `Submit the result of a tool execution. This endpoint is called by the external execution system (e.g., n8n) after executing a tool requested by the agent.
+
+**Flow:**
+1. Agent responds with \`mode: ACT\` and a \`tool_request\`
+2. External system executes the tool
+3. External system calls this endpoint with the result
+4. Result is stored in the conversation thread for context
+
+---
+
+## Example Request (Success)
+\`\`\`json
+{
+  "tool_call_id": "tc_abc123xyz",
+  "project_id": "clx1234567890abcdef",
+  "ok": true,
+  "data": {
+    "ticket_id": "ECOM-1234",
+    "ticket_url": "https://jira.example.com/browse/ECOM-1234",
+    "status": "created"
+  }
+}
+\`\`\`
+
+## Example Request (Failure)
+\`\`\`json
+{
+  "tool_call_id": "tc_abc123xyz",
+  "project_id": "clx1234567890abcdef",
+  "ok": false,
+  "error": "Permission denied: User does not have access to project ECOM"
+}
+\`\`\`
+
+## Example Response
+\`\`\`json
+{
+  "status": "acknowledged",
+  "tool_call_id": "tc_abc123xyz"
+}
+\`\`\``,
       body: ToolResultBody,
       response: {
         200: {
