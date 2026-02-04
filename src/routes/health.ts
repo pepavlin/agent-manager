@@ -3,7 +3,7 @@ import { prisma } from '../db/client.js';
 import { getQdrantClient } from '../services/qdrant.js';
 
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/healthz', {
+  app.get('/health', {
     schema: {
       tags: ['Health'],
       summary: 'Health check',

@@ -34,4 +34,4 @@ export function getEmbeddingProvider(): IEmbeddingProvider {
   return instance;
 }
 
-export { IEmbeddingProvider } from './IEmbeddingProvider.js';
+export type { IEmbeddingProvider } from './IEmbeddingProvider.js';

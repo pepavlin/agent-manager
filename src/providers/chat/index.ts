@@ -34,4 +34,4 @@ export function getChatProvider(): IChatProvider {
   return instance;
 }
 
-export { IChatProvider } from './IChatProvider.js';
+export type { IChatProvider } from './IChatProvider.js';

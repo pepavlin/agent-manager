@@ -54,12 +54,11 @@ async function buildApp(): Promise<FastifyInstance> {
       },
       security: [{ apiKey: [] }],
       tags: [
-        { name: 'Health', description: 'Health check endpoints' },
-        { name: 'Projects', description: 'Project management' },
-        { name: 'Documents', description: 'Document upload and management' },
+        { name: 'Health', description: 'Health check endpoint' },
+        { name: 'Projects', description: 'Project creation' },
+        { name: 'Documents', description: 'Document upload and indexing' },
         { name: 'Chat', description: 'Chat with the AI agent' },
-        { name: 'Tools', description: 'Tool execution and callbacks' },
-        { name: 'Threads', description: 'Conversation threads' },
+        { name: 'Tools', description: 'Tool execution callbacks' },
       ],
     },
   });
@@ -97,11 +96,8 @@ async function buildApp(): Promise<FastifyInstance> {
   app.addHook('preHandler', async (request, reply) => {
     // Skip auth for health check and docs
     if (
-      request.url === '/healthz' ||
-      request.url.startsWith('/docs') ||
-      request.url.startsWith('/docs/') ||
-      request.url === '/docs/json' ||
-      request.url === '/docs/yaml'
+      request.url === '/health' ||
+      request.url.startsWith('/docs')
     ) {
       return;
     }

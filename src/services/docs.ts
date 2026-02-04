@@ -1,4 +1,4 @@
-import { nanoid } from 'nanoid';
+import { randomUUID } from 'crypto';
 import { prisma } from '../db/client.js';
 import { storeFile, readStoredFile } from '../utils/storage.js';
 import { chunkText, extractText } from '../utils/chunking.js';
@@ -104,7 +104,7 @@ async function indexDocument(
 
   // Prepare points for Qdrant
   const points: QdrantPoint[] = chunks.map((chunk, i) => ({
-    id: nanoid(),
+    id: randomUUID(),
     vector: vectors[i],
     payload: {
       document_id: documentId,
