@@ -2,6 +2,8 @@ import Fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import { config } from './config.js';
 import { logger, createChildLogger } from './utils/logger.js';
 import { prisma, connectDatabase, disconnectDatabase } from './db/client.js';
@@ -26,6 +28,52 @@ async function buildApp(): Promise<FastifyInstance> {
     origin: true,
   });
 
+  // Swagger documentation
+  await app.register(swagger, {
+    openapi: {
+      info: {
+        title: 'Agent Manager API',
+        description: 'Document-first Project Manager AI Agent API',
+        version: '1.0.0',
+      },
+      servers: [
+        {
+          url: `http://localhost:${config.port}`,
+          description: 'Development server',
+        },
+      ],
+      components: {
+        securitySchemes: {
+          apiKey: {
+            type: 'apiKey',
+            name: 'X-AGENT-KEY',
+            in: 'header',
+            description: 'API key for authentication',
+          },
+        },
+      },
+      security: [{ apiKey: [] }],
+      tags: [
+        { name: 'Health', description: 'Health check endpoints' },
+        { name: 'Projects', description: 'Project management' },
+        { name: 'Documents', description: 'Document upload and management' },
+        { name: 'Chat', description: 'Chat with the AI agent' },
+        { name: 'Tools', description: 'Tool execution and callbacks' },
+        { name: 'Threads', description: 'Conversation threads' },
+      ],
+    },
+  });
+
+  await app.register(swaggerUi, {
+    routePrefix: '/docs',
+    uiConfig: {
+      docExpansion: 'list',
+      deepLinking: true,
+      persistAuthorization: true,
+    },
+    staticCSP: true,
+  });
+
   await app.register(multipart, {
     limits: {
       fileSize: config.maxUploadSizeMb * 1024 * 1024,
@@ -47,8 +95,14 @@ async function buildApp(): Promise<FastifyInstance> {
 
   // API key authentication hook
   app.addHook('preHandler', async (request, reply) => {
-    // Skip auth for health check
-    if (request.url === '/healthz') {
+    // Skip auth for health check and docs
+    if (
+      request.url === '/healthz' ||
+      request.url.startsWith('/docs') ||
+      request.url.startsWith('/docs/') ||
+      request.url === '/docs/json' ||
+      request.url === '/docs/yaml'
+    ) {
       return;
     }
 
@@ -72,7 +126,7 @@ async function buildApp(): Promise<FastifyInstance> {
   });
 
   // Error handler
-  app.setErrorHandler(async (error, request, reply) => {
+  app.setErrorHandler(async (error: Error & { validation?: unknown; statusCode?: number }, request, reply) => {
     serverLogger.error({ error, url: request.url }, 'Request error');
 
     // Handle validation errors

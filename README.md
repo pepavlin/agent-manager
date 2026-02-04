@@ -10,6 +10,7 @@ A document-first project manager AI agent that learns from uploaded documents, m
 - **Tool execution**: Integrates with n8n for external tool execution
 - **Provider agnostic**: Supports OpenAI, Anthropic, Claude CLI for chat; OpenAI, Ollama, Mock for embeddings
 - **Multi-project support**: Manage multiple projects with separate knowledge bases
+- **Swagger UI**: Interactive API documentation at `/docs`
 
 ## Architecture
 
@@ -136,11 +137,32 @@ export EMBEDDING_DIMS=3072  # text-embedding-3-large dimensions
 docker compose up -d
 ```
 
+## API Documentation
+
+### Swagger UI
+
+Interactive API documentation is available at:
+```
+http://localhost:3000/docs
+```
+
+The Swagger UI provides:
+- Complete API reference with all endpoints
+- Request/response schemas
+- Try it out functionality
+- Authentication support (add your API key in the Authorize button)
+
+### OpenAPI Spec
+
+The OpenAPI specification is available at:
+- JSON: `http://localhost:3000/docs/json`
+- YAML: `http://localhost:3000/docs/yaml`
+
 ## API Reference
 
 ### Authentication
 
-All endpoints (except `/healthz`) require the `X-AGENT-KEY` header:
+All endpoints (except `/healthz` and `/docs/*`) require the `X-AGENT-KEY` header:
 
 ```bash
 curl -H "X-AGENT-KEY: your-api-key" http://localhost:3000/projects

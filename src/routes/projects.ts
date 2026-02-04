@@ -5,6 +5,13 @@ import { generateProjectBrief, getProjectBrief } from '../services/brief.js';
 import { ensureCollection, deleteCollection } from '../services/qdrant.js';
 import { CreateProjectSchema, DocumentCategorySchema, DocumentCategory } from '../types/index.js';
 import { createChildLogger } from '../utils/logger.js';
+import {
+  CreateProjectBody,
+  ProjectSchema,
+  DocumentSchema,
+  ProjectBriefSchema,
+  ErrorResponse,
+} from '../schemas/index.js';
 
 const logger = createChildLogger('routes:projects');
 
@@ -13,7 +20,27 @@ const SUPPORTED_MIMES = ['text/plain', 'text/markdown', 'application/pdf'];
 
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
   // Create project
-  app.post('/projects', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/projects', {
+    schema: {
+      tags: ['Projects'],
+      summary: 'Create a new project',
+      description: 'Create a new project with a name and role statement for the AI agent',
+      body: CreateProjectBody,
+      response: {
+        201: {
+          description: 'Project created successfully',
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            role_statement: { type: 'string' },
+            created_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        400: ErrorResponse,
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const body = CreateProjectSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ error: 'Invalid request', details: body.error.errors });
@@ -42,7 +69,24 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Get project
-  app.get('/projects/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+  app.get('/projects/:id', {
+    schema: {
+      tags: ['Projects'],
+      summary: 'Get project details',
+      description: 'Get detailed information about a specific project',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Project ID' },
+        },
+        required: ['id'],
+      },
+      response: {
+        200: ProjectSchema,
+        404: ErrorResponse,
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const { id } = request.params;
 
     const project = await prisma.project.findUnique({
@@ -80,7 +124,33 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // List projects
-  app.get('/projects', async (_request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/projects', {
+    schema: {
+      tags: ['Projects'],
+      summary: 'List all projects',
+      description: 'Get a list of all projects',
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            projects: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  name: { type: 'string' },
+                  role_statement: { type: 'string' },
+                  created_at: { type: 'string', format: 'date-time' },
+                  documents_count: { type: 'number' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
     const projects = await prisma.project.findMany({
       orderBy: { createdAt: 'desc' },
       select: {
@@ -108,7 +178,24 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Delete project
-  app.delete('/projects/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+  app.delete('/projects/:id', {
+    schema: {
+      tags: ['Projects'],
+      summary: 'Delete a project',
+      description: 'Delete a project and all its associated data',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Project ID' },
+        },
+        required: ['id'],
+      },
+      response: {
+        204: { type: 'null', description: 'Project deleted successfully' },
+        404: ErrorResponse,
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const { id } = request.params;
 
     const project = await prisma.project.findUnique({ where: { id } });
@@ -128,102 +215,171 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Upload document
-  app.post(
-    '/projects/:id/docs',
-    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-      const { id: projectId } = request.params;
+  app.post('/projects/:id/docs', {
+    schema: {
+      tags: ['Documents'],
+      summary: 'Upload a document',
+      description: 'Upload a document to a project. Supports text/plain, text/markdown, and application/pdf files.',
+      consumes: ['multipart/form-data'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Project ID' },
+        },
+        required: ['id'],
+      },
+      response: {
+        201: DocumentSchema,
+        400: ErrorResponse,
+        404: ErrorResponse,
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { id: projectId } = request.params;
 
-      // Check project exists
-      const project = await prisma.project.findUnique({ where: { id: projectId } });
-      if (!project) {
-        return reply.status(404).send({ error: 'Project not found' });
-      }
+    // Check project exists
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) {
+      return reply.status(404).send({ error: 'Project not found' });
+    }
 
-      // Handle multipart upload
-      const data = await request.file();
-      if (!data) {
-        return reply.status(400).send({ error: 'No file uploaded' });
-      }
+    // Handle multipart upload
+    const data = await request.file();
+    if (!data) {
+      return reply.status(400).send({ error: 'No file uploaded' });
+    }
 
-      // Get category from fields
-      const categoryField = (data.fields.category as { value?: string })?.value;
-      const categoryResult = DocumentCategorySchema.safeParse(categoryField);
-      if (!categoryResult.success) {
-        return reply.status(400).send({
-          error: 'Invalid category',
-          details: 'category must be one of: FACTS, RULES, STATE',
-        });
-      }
-      const category: DocumentCategory = categoryResult.data;
-
-      // Validate mime type
-      const mime = data.mimetype;
-      if (!SUPPORTED_MIMES.includes(mime)) {
-        return reply.status(400).send({
-          error: 'Unsupported file type',
-          details: `Supported types: ${SUPPORTED_MIMES.join(', ')}`,
-        });
-      }
-
-      // Read file content
-      const buffer = await data.toBuffer();
-
-      // Upload and index
-      const result = await uploadDocument(projectId, category, data.filename, buffer, mime);
-
-      // Generate/update project brief in background
-      generateProjectBrief(projectId).catch((error) => {
-        logger.error({ error, projectId }, 'Failed to generate brief');
-      });
-
-      return reply.status(201).send({
-        id: result.id,
-        project_id: result.projectId,
-        category: result.category,
-        filename: result.filename,
-        chunks_count: result.chunksCount,
-        status: result.status,
-        error: result.error,
+    // Get category from fields
+    const categoryField = (data.fields.category as { value?: string })?.value;
+    const categoryResult = DocumentCategorySchema.safeParse(categoryField);
+    if (!categoryResult.success) {
+      return reply.status(400).send({
+        error: 'Invalid category',
+        details: 'category must be one of: FACTS, RULES, STATE',
       });
     }
-  );
+    const category: DocumentCategory = categoryResult.data;
+
+    // Validate mime type
+    const mime = data.mimetype;
+    if (!SUPPORTED_MIMES.includes(mime)) {
+      return reply.status(400).send({
+        error: 'Unsupported file type',
+        details: `Supported types: ${SUPPORTED_MIMES.join(', ')}`,
+      });
+    }
+
+    // Read file content
+    const buffer = await data.toBuffer();
+
+    // Upload and index
+    const result = await uploadDocument(projectId, category, data.filename, buffer, mime);
+
+    // Generate/update project brief in background
+    generateProjectBrief(projectId).catch((error) => {
+      logger.error({ error, projectId }, 'Failed to generate brief');
+    });
+
+    return reply.status(201).send({
+      id: result.id,
+      project_id: result.projectId,
+      category: result.category,
+      filename: result.filename,
+      chunks_count: result.chunksCount,
+      status: result.status,
+      error: result.error,
+    });
+  });
 
   // List documents
-  app.get(
-    '/projects/:id/docs',
-    async (request: FastifyRequest<{ Params: { id: string }; Querystring: { category?: string } }>, reply: FastifyReply) => {
-      const { id: projectId } = request.params;
-      const { category } = request.query;
+  app.get('/projects/:id/docs', {
+    schema: {
+      tags: ['Documents'],
+      summary: 'List project documents',
+      description: 'Get a list of all documents in a project',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Project ID' },
+        },
+        required: ['id'],
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          category: { type: 'string', enum: ['FACTS', 'RULES', 'STATE'], description: 'Filter by category' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            documents: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  category: { type: 'string' },
+                  filename: { type: 'string' },
+                  created_at: { type: 'string', format: 'date-time' },
+                },
+              },
+            },
+          },
+        },
+        404: ErrorResponse,
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string }; Querystring: { category?: string } }>, reply: FastifyReply) => {
+    const { id: projectId } = request.params;
+    const { category } = request.query;
 
-      // Check project exists
-      const project = await prisma.project.findUnique({ where: { id: projectId } });
-      if (!project) {
-        return reply.status(404).send({ error: 'Project not found' });
-      }
-
-      let categoryFilter: DocumentCategory | undefined;
-      if (category) {
-        const categoryResult = DocumentCategorySchema.safeParse(category);
-        if (categoryResult.success) {
-          categoryFilter = categoryResult.data;
-        }
-      }
-
-      const documents = await getDocumentsByProject(projectId, categoryFilter);
-
-      return reply.send({
-        documents: documents.map((d) => ({
-          id: d.id,
-          category: d.category,
-          filename: d.filename,
-          created_at: d.createdAt,
-        })),
-      });
+    // Check project exists
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) {
+      return reply.status(404).send({ error: 'Project not found' });
     }
-  );
+
+    let categoryFilter: DocumentCategory | undefined;
+    if (category) {
+      const categoryResult = DocumentCategorySchema.safeParse(category);
+      if (categoryResult.success) {
+        categoryFilter = categoryResult.data;
+      }
+    }
+
+    const documents = await getDocumentsByProject(projectId, categoryFilter);
+
+    return reply.send({
+      documents: documents.map((d) => ({
+        id: d.id,
+        category: d.category,
+        filename: d.filename,
+        created_at: d.createdAt,
+      })),
+    });
+  });
 
   // Get project brief
-  app.get('/projects/:id/brief', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+  app.get('/projects/:id/brief', {
+    schema: {
+      tags: ['Projects'],
+      summary: 'Get project brief',
+      description: 'Get the AI-generated brief for a project',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Project ID' },
+        },
+        required: ['id'],
+      },
+      response: {
+        200: ProjectBriefSchema,
+        404: ErrorResponse,
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const { id: projectId } = request.params;
 
     const project = await prisma.project.findUnique({ where: { id: projectId } });
@@ -244,7 +400,24 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Regenerate project brief
-  app.post('/projects/:id/brief/regenerate', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+  app.post('/projects/:id/brief/regenerate', {
+    schema: {
+      tags: ['Projects'],
+      summary: 'Regenerate project brief',
+      description: 'Force regeneration of the project brief based on current documents',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Project ID' },
+        },
+        required: ['id'],
+      },
+      response: {
+        200: ProjectBriefSchema,
+        404: ErrorResponse,
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const { id: projectId } = request.params;
 
     const project = await prisma.project.findUnique({ where: { id: projectId } });

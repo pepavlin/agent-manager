@@ -4,12 +4,36 @@ import { prisma } from '../db/client.js';
 import { ToolResultSchema } from '../types/index.js';
 import { getAllToolDefinitions } from '../tools/registry.js';
 import { createChildLogger } from '../utils/logger.js';
+import {
+  ToolResultBody,
+  ToolDefinitionSchema,
+  PendingToolCallSchema,
+  ErrorResponse,
+} from '../schemas/index.js';
 
 const logger = createChildLogger('routes:tools');
 
 export async function toolRoutes(app: FastifyInstance): Promise<void> {
   // Tool result callback from n8n
-  app.post('/tools/result', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/tools/result', {
+    schema: {
+      tags: ['Tools'],
+      summary: 'Submit tool execution result',
+      description: 'Submit the result of a tool execution (called by n8n after executing a tool)',
+      body: ToolResultBody,
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            status: { type: 'string', enum: ['acknowledged'] },
+            tool_call_id: { type: 'string' },
+          },
+        },
+        404: ErrorResponse,
+        500: ErrorResponse,
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const body = ToolResultSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({
@@ -42,124 +66,211 @@ export async function toolRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // List pending tool calls for a project
-  app.get(
-    '/projects/:id/tools/pending',
-    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-      const { id: projectId } = request.params;
-
-      const pendingCalls = await prisma.toolCall.findMany({
-        where: {
-          projectId,
-          status: 'pending',
+  app.get('/projects/:id/tools/pending', {
+    schema: {
+      tags: ['Tools'],
+      summary: 'List pending tool calls',
+      description: 'Get all pending tool calls for a project that are awaiting execution or approval',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Project ID' },
         },
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          name: true,
-          argsJson: true,
-          requiresApproval: true,
-          risk: true,
-          createdAt: true,
-          thread: {
-            select: { userId: true },
+        required: ['id'],
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            pending_calls: {
+              type: 'array',
+              items: PendingToolCallSchema,
+            },
           },
         },
-      });
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { id: projectId } = request.params;
 
-      return reply.send({
-        pending_calls: pendingCalls.map((c) => ({
-          id: c.id,
-          name: c.name,
-          args: JSON.parse(c.argsJson),
-          requires_approval: c.requiresApproval,
-          risk: c.risk,
-          user_id: c.thread.userId,
-          created_at: c.createdAt,
-        })),
-      });
-    }
-  );
+    const pendingCalls = await prisma.toolCall.findMany({
+      where: {
+        projectId,
+        status: 'pending',
+      },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        argsJson: true,
+        requiresApproval: true,
+        risk: true,
+        createdAt: true,
+        thread: {
+          select: { userId: true },
+        },
+      },
+    });
+
+    return reply.send({
+      pending_calls: pendingCalls.map((c) => ({
+        id: c.id,
+        name: c.name,
+        args: JSON.parse(c.argsJson),
+        requires_approval: c.requiresApproval,
+        risk: c.risk,
+        user_id: c.thread.userId,
+        created_at: c.createdAt,
+      })),
+    });
+  });
 
   // Approve a pending tool call
-  app.post(
-    '/tools/:id/approve',
-    async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-      const { id: toolCallId } = request.params;
-
-      const toolCall = await prisma.toolCall.findUnique({
-        where: { id: toolCallId },
-      });
-
-      if (!toolCall) {
-        return reply.status(404).send({ error: 'Tool call not found' });
-      }
-
-      if (toolCall.status !== 'pending') {
-        return reply.status(400).send({
-          error: 'Tool call is not pending',
-          current_status: toolCall.status,
-        });
-      }
-
-      await prisma.toolCall.update({
-        where: { id: toolCallId },
-        data: {
-          status: 'approved',
-          updatedAt: new Date(),
+  app.post('/tools/:id/approve', {
+    schema: {
+      tags: ['Tools'],
+      summary: 'Approve a tool call',
+      description: 'Approve a pending tool call for execution',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Tool call ID' },
         },
-      });
+        required: ['id'],
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            status: { type: 'string', enum: ['approved'] },
+            message: { type: 'string' },
+          },
+        },
+        400: ErrorResponse,
+        404: ErrorResponse,
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { id: toolCallId } = request.params;
 
-      return reply.send({
-        id: toolCallId,
-        status: 'approved',
-        message: 'Tool call approved, ready for execution by n8n',
+    const toolCall = await prisma.toolCall.findUnique({
+      where: { id: toolCallId },
+    });
+
+    if (!toolCall) {
+      return reply.status(404).send({ error: 'Tool call not found' });
+    }
+
+    if (toolCall.status !== 'pending') {
+      return reply.status(400).send({
+        error: 'Tool call is not pending',
+        current_status: toolCall.status,
       });
     }
-  );
+
+    await prisma.toolCall.update({
+      where: { id: toolCallId },
+      data: {
+        status: 'approved',
+        updatedAt: new Date(),
+      },
+    });
+
+    return reply.send({
+      id: toolCallId,
+      status: 'approved',
+      message: 'Tool call approved, ready for execution by n8n',
+    });
+  });
 
   // Reject a pending tool call
-  app.post(
-    '/tools/:id/reject',
-    async (
-      request: FastifyRequest<{ Params: { id: string }; Body: { reason?: string } }>,
-      reply: FastifyReply
-    ) => {
-      const { id: toolCallId } = request.params;
-      const { reason } = (request.body as { reason?: string }) || {};
-
-      const toolCall = await prisma.toolCall.findUnique({
-        where: { id: toolCallId },
-      });
-
-      if (!toolCall) {
-        return reply.status(404).send({ error: 'Tool call not found' });
-      }
-
-      if (toolCall.status !== 'pending') {
-        return reply.status(400).send({
-          error: 'Tool call is not pending',
-          current_status: toolCall.status,
-        });
-      }
-
-      await prisma.toolCall.update({
-        where: { id: toolCallId },
-        data: {
-          status: 'rejected',
-          resultJson: JSON.stringify({ ok: false, error: reason || 'Rejected by user' }),
-          updatedAt: new Date(),
+  app.post('/tools/:id/reject', {
+    schema: {
+      tags: ['Tools'],
+      summary: 'Reject a tool call',
+      description: 'Reject a pending tool call',
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Tool call ID' },
         },
-      });
+        required: ['id'],
+      },
+      body: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string', description: 'Reason for rejection' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            status: { type: 'string', enum: ['rejected'] },
+          },
+        },
+        400: ErrorResponse,
+        404: ErrorResponse,
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Params: { id: string }; Body: { reason?: string } }>,
+    reply: FastifyReply
+  ) => {
+    const { id: toolCallId } = request.params;
+    const { reason } = (request.body as { reason?: string }) || {};
 
-      return reply.send({
-        id: toolCallId,
-        status: 'rejected',
+    const toolCall = await prisma.toolCall.findUnique({
+      where: { id: toolCallId },
+    });
+
+    if (!toolCall) {
+      return reply.status(404).send({ error: 'Tool call not found' });
+    }
+
+    if (toolCall.status !== 'pending') {
+      return reply.status(400).send({
+        error: 'Tool call is not pending',
+        current_status: toolCall.status,
       });
     }
-  );
+
+    await prisma.toolCall.update({
+      where: { id: toolCallId },
+      data: {
+        status: 'rejected',
+        resultJson: JSON.stringify({ ok: false, error: reason || 'Rejected by user' }),
+        updatedAt: new Date(),
+      },
+    });
+
+    return reply.send({
+      id: toolCallId,
+      status: 'rejected',
+    });
+  });
 
   // List available tools
-  app.get('/tools', async (_request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/tools', {
+    schema: {
+      tags: ['Tools'],
+      summary: 'List available tools',
+      description: 'Get a list of all available tools that the agent can use',
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            tools: {
+              type: 'array',
+              items: ToolDefinitionSchema,
+            },
+          },
+        },
+      },
+    },
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
     const tools = getAllToolDefinitions();
 
     return reply.send({

@@ -3,7 +3,34 @@ import { prisma } from '../db/client.js';
 import { getQdrantClient } from '../services/qdrant.js';
 
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/healthz', async (_request, reply) => {
+  app.get('/healthz', {
+    schema: {
+      tags: ['Health'],
+      summary: 'Health check',
+      description: 'Check the health status of the API and its dependencies',
+      security: [],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            status: { type: 'string', enum: ['ok', 'degraded'] },
+            timestamp: { type: 'string', format: 'date-time' },
+            database: { type: 'string', enum: ['ok', 'error'] },
+            qdrant: { type: 'string', enum: ['ok', 'error'] },
+          },
+        },
+        503: {
+          type: 'object',
+          properties: {
+            status: { type: 'string', enum: ['ok', 'degraded'] },
+            timestamp: { type: 'string', format: 'date-time' },
+            database: { type: 'string', enum: ['ok', 'error'] },
+            qdrant: { type: 'string', enum: ['ok', 'error'] },
+          },
+        },
+      },
+    },
+  }, async (_request, reply) => {
     const checks: Record<string, string> = {
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -28,7 +55,9 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
       checks.status = 'degraded';
     }
 
-    const statusCode = checks.status === 'ok' ? 200 : 503;
-    return reply.status(statusCode).send(checks);
+    if (checks.status === 'ok') {
+      return reply.status(200).send(checks);
+    }
+    return reply.code(503).send(checks);
   });
 }
