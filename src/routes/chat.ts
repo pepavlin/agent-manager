@@ -3,6 +3,7 @@ import { processChat } from '../services/agent.js';
 import { ChatRequestSchema } from '../types/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import { ChatRequestBody, ChatResponseSchema, ErrorResponse } from '../schemas/index.js';
+import { isAppError } from '../utils/errors.js';
 
 const logger = createChildLogger('routes:chat');
 
@@ -41,8 +42,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     } catch (error) {
       logger.error({ error }, 'Chat processing failed');
 
-      if (error instanceof Error && error.message.includes('Project not found')) {
-        return reply.status(404).send({ error: error.message });
+      if (isAppError(error)) {
+        return reply.status(error.statusCode).send({
+          error: error.message,
+          code: error.code,
+          details: error.details,
+        });
       }
 
       return reply.status(500).send({

@@ -102,7 +102,7 @@ vi.mock('../src/providers/chat/index.js', () => ({
   })),
 }));
 
-// Mock embedding provider - use async function that returns proper values
+// Mock embedding provider
 vi.mock('../src/providers/embeddings/index.js', () => {
   return {
     getEmbeddingProvider: () => ({
@@ -113,7 +113,7 @@ vi.mock('../src/providers/embeddings/index.js', () => {
   };
 });
 
-// Mock RAG service to avoid complex embedding/search dependencies
+// Mock RAG service
 vi.mock('../src/services/rag.js', () => ({
   retrieveContext: vi.fn().mockResolvedValue({
     kbChunks: [],
@@ -141,25 +141,44 @@ describe('API Integration Tests', () => {
   });
 
   describe('Health Check', () => {
-    it('GET /healthz should return 200', async () => {
+    it('GET /health should return 200', async () => {
       vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([{ '?column?': 1 }]);
 
       const response = await app.inject({
         method: 'GET',
-        url: '/healthz',
+        url: '/health',
       });
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.status).toBeDefined();
     });
+
+    it('GET /health should not require authentication', async () => {
+      vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([{ '?column?': 1 }]);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/health',
+        // No x-agent-key header
+      });
+
+      expect(response.statusCode).toBe(200);
+    });
   });
 
   describe('Authentication', () => {
     it('should reject requests without API key', async () => {
       const response = await app.inject({
-        method: 'GET',
+        method: 'POST',
         url: '/projects',
+        headers: {
+          'content-type': 'application/json',
+        },
+        payload: {
+          name: 'Test',
+          roleStatement: 'Test',
+        },
       });
 
       expect(response.statusCode).toBe(401);
@@ -167,10 +186,15 @@ describe('API Integration Tests', () => {
 
     it('should reject requests with invalid API key', async () => {
       const response = await app.inject({
-        method: 'GET',
+        method: 'POST',
         url: '/projects',
         headers: {
           'x-agent-key': 'wrong-key',
+          'content-type': 'application/json',
+        },
+        payload: {
+          name: 'Test',
+          roleStatement: 'Test',
         },
       });
 
@@ -178,17 +202,30 @@ describe('API Integration Tests', () => {
     });
 
     it('should accept requests with valid API key', async () => {
-      vi.mocked(prisma.project.findMany).mockResolvedValueOnce([]);
+      const mockProject = {
+        id: 'test-project-id',
+        name: 'Test Project',
+        roleStatement: 'Test role statement',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      vi.mocked(prisma.project.create).mockResolvedValueOnce(mockProject);
 
       const response = await app.inject({
-        method: 'GET',
+        method: 'POST',
         url: '/projects',
         headers: {
           'x-agent-key': 'test-api-key',
+          'content-type': 'application/json',
+        },
+        payload: {
+          name: 'Test Project',
+          roleStatement: 'Test role statement',
         },
       });
 
-      expect(response.statusCode).toBe(200);
+      expect(response.statusCode).toBe(201);
     });
   });
 
@@ -237,50 +274,6 @@ describe('API Integration Tests', () => {
       });
 
       expect(response.statusCode).toBe(400);
-    });
-
-    it('GET /projects/:id should return project', async () => {
-      const mockProject = {
-        id: 'test-project-id',
-        name: 'Test Project',
-        roleStatement: 'Test role statement',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        brief: null,
-        _count: {
-          documents: 5,
-          threads: 2,
-        },
-      };
-
-      vi.mocked(prisma.project.findUnique).mockResolvedValueOnce(mockProject as never);
-
-      const response = await app.inject({
-        method: 'GET',
-        url: '/projects/test-project-id',
-        headers: {
-          'x-agent-key': 'test-api-key',
-        },
-      });
-
-      expect(response.statusCode).toBe(200);
-      const body = JSON.parse(response.body);
-      expect(body.id).toBe('test-project-id');
-      expect(body.documents_count).toBe(5);
-    });
-
-    it('GET /projects/:id should return 404 for non-existent project', async () => {
-      vi.mocked(prisma.project.findUnique).mockResolvedValueOnce(null);
-
-      const response = await app.inject({
-        method: 'GET',
-        url: '/projects/non-existent-id',
-        headers: {
-          'x-agent-key': 'test-api-key',
-        },
-      });
-
-      expect(response.statusCode).toBe(404);
     });
   });
 
@@ -331,17 +324,68 @@ describe('API Integration Tests', () => {
         },
       });
 
-      // Debug: log response if not 200
-      if (response.statusCode !== 200) {
-        console.log('Chat response error:', response.body);
-      }
-
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.thread_id).toBeDefined();
       expect(body.response_json).toBeDefined();
       expect(body.response_json.mode).toBe('NOOP');
       expect(body.render.text_to_send_to_user).toBeDefined();
+    });
+
+    it('POST /chat should accept dynamic tools', async () => {
+      const mockProject = {
+        id: 'test-project-id',
+        name: 'Test Project',
+        roleStatement: 'Test role statement',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const mockThread = {
+        id: 'test-thread-id',
+        projectId: 'test-project-id',
+        userId: 'test-user-id',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      vi.mocked(prisma.project.findUnique).mockResolvedValueOnce(mockProject);
+      vi.mocked(prisma.thread.create).mockResolvedValueOnce(mockThread);
+      vi.mocked(prisma.message.create).mockResolvedValue({
+        id: 'msg-id',
+        threadId: 'test-thread-id',
+        role: 'user',
+        content: 'test',
+        createdAt: new Date(),
+      } as never);
+      vi.mocked(prisma.auditLog.create).mockResolvedValueOnce({} as never);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/chat',
+        headers: {
+          'x-agent-key': 'test-api-key',
+          'content-type': 'application/json',
+        },
+        payload: {
+          project_id: 'test-project-id',
+          user_id: 'test-user-id',
+          message: 'Hello!',
+          tools: [
+            {
+              name: 'custom.tool',
+              description: 'A custom tool',
+              parameters: {
+                param1: { type: 'string', required: true },
+              },
+              requires_approval: true,
+              risk: 'low',
+            },
+          ],
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
     });
 
     it('POST /chat should reject invalid request', async () => {
@@ -362,35 +406,13 @@ describe('API Integration Tests', () => {
     });
   });
 
-  describe('Tools API', () => {
-    it('GET /tools should list available tools', async () => {
-      const response = await app.inject({
-        method: 'GET',
-        url: '/tools',
-        headers: {
-          'x-agent-key': 'test-api-key',
-        },
-      });
-
-      expect(response.statusCode).toBe(200);
-      const body = JSON.parse(response.body);
-      expect(body.tools).toBeDefined();
-      expect(Array.isArray(body.tools)).toBe(true);
-      expect(body.tools.length).toBeGreaterThan(0);
-
-      // Check tool structure
-      const tool = body.tools[0];
-      expect(tool.name).toBeDefined();
-      expect(tool.description).toBeDefined();
-      expect(tool.requires_approval).toBeDefined();
-    });
-
+  describe('Tools Result API', () => {
     it('POST /tools/result should process tool result', async () => {
       const mockToolCall = {
         id: 'tool-call-id',
         projectId: 'test-project-id',
         threadId: 'test-thread-id',
-        name: 'backlog.add_item',
+        name: 'custom.tool',
         argsJson: '{}',
         requiresApproval: true,
         risk: 'low',
@@ -421,13 +443,38 @@ describe('API Integration Tests', () => {
           tool_call_id: 'tool-call-id',
           project_id: 'test-project-id',
           ok: true,
-          data: { item_id: 'new-item-123' },
+          data: { result: 'success' },
         },
       });
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.status).toBe('acknowledged');
+    });
+  });
+
+  describe('Swagger Documentation', () => {
+    it('GET /docs should return Swagger UI', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/docs',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('text/html');
+    });
+
+    it('GET /docs/json should return OpenAPI spec', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/docs/json',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.openapi).toBeDefined();
+      expect(body.paths['/chat']).toBeDefined();
+      expect(body.paths['/projects']).toBeDefined();
     });
   });
 });

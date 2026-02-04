@@ -65,9 +65,30 @@ Chat and embedding providers implement interfaces in `src/providers/`:
 
 Factories in `index.ts` select provider based on `CHAT_PROVIDER`/`EMBEDDING_PROVIDER` env vars.
 
-### Tool System
+### Tool System (Dynamic)
 
-Tools defined in `src/tools/definitions.ts` with Zod schemas. Agent sees tools in system prompt and can request execution. n8n executes and calls `POST /tools/result` with outcome.
+Tools are **not** defined statically in the codebase. They are passed with each `POST /chat` request:
+
+```json
+{
+  "project_id": "...",
+  "message": "Create a ticket",
+  "tools": [
+    {
+      "name": "jira.create_ticket",
+      "description": "Create a Jira ticket",
+      "parameters": {
+        "summary": {"type": "string", "required": true},
+        "project": {"type": "string", "required": true}
+      },
+      "requires_approval": true,
+      "risk": "medium"
+    }
+  ]
+}
+```
+
+Each project/request can have different tools. Agent validates tool requests against the provided tools array. External system (n8n) executes tools and calls `POST /tools/result` with outcome.
 
 ### Document Processing
 

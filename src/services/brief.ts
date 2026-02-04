@@ -2,6 +2,7 @@ import { prisma } from '../db/client.js';
 import { getChatProvider } from '../providers/chat/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import { extractJson } from '../utils/json-repair.js';
+import { NotFoundError } from '../utils/errors.js';
 
 const logger = createChildLogger('brief');
 
@@ -48,7 +49,7 @@ export async function generateProjectBrief(projectId: string): Promise<BriefGene
   });
 
   if (!project) {
-    throw new Error(`Project not found: ${projectId}`);
+    throw new NotFoundError('Project', projectId);
   }
 
   // Get all documents for the project

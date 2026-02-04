@@ -8,7 +8,21 @@ export type AgentMode = z.infer<typeof AgentModeSchema>;
 export const RiskLevelSchema = z.enum(['low', 'medium', 'high']);
 export type RiskLevel = z.infer<typeof RiskLevelSchema>;
 
-// Tool request schema
+// Tool definition for API requests (dynamic, JSON serializable)
+export const ToolInputSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  parameters: z.record(z.object({
+    type: z.string(),
+    description: z.string().optional(),
+    required: z.boolean().optional(),
+  })).optional(),
+  requires_approval: z.boolean().default(true),
+  risk: RiskLevelSchema.default('medium'),
+});
+export type ToolInput = z.infer<typeof ToolInputSchema>;
+
+// Tool request schema (agent output)
 export const ToolRequestSchema = z.object({
   name: z.string(),
   args: z.record(z.unknown()),
@@ -44,6 +58,7 @@ export const ChatRequestSchema = z.object({
   user_id: z.string(),
   thread_id: z.string().optional(),
   message: z.string().min(1),
+  tools: z.array(ToolInputSchema).optional().default([]),
   context: z
     .object({
       source: z.string(),
@@ -90,7 +105,7 @@ export const ToolResultSchema = z.object({
 });
 export type ToolResultRequest = z.infer<typeof ToolResultSchema>;
 
-// Tool definition
+// Tool definition (static, with Zod schema - for internal use)
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -123,5 +138,3 @@ export interface EmbeddingResult {
   model: string;
   dims: number;
 }
-
-// Provider interfaces are in their own files

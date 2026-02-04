@@ -3,17 +3,50 @@ import { getChatProvider } from '../providers/chat/index.js';
 import { retrieveContext } from './rag.js';
 import { applyMemoryUpdates } from './memory.js';
 import { assembleSystemPrompt, assembleUserPrompt } from './prompts.js';
-import { validateToolRequest } from '../tools/registry.js';
-import { AgentResponse, AgentResponseSchema, ChatRequest, ChatResponse } from '../types/index.js';
+import { AgentResponse, AgentResponseSchema, ChatRequest, ChatResponse, ToolInput, ToolRequest } from '../types/index.js';
 import { extractJson } from '../utils/json-repair.js';
 import { createChildLogger } from '../utils/logger.js';
+import { NotFoundError } from '../utils/errors.js';
 
 const logger = createChildLogger('agent');
 
-export async function processChat(request: ChatRequest): Promise<ChatResponse> {
-  const { project_id, user_id, thread_id, message, context: requestContext } = request;
+function validateToolRequest(
+  toolRequest: ToolRequest,
+  availableTools: ToolInput[]
+): { valid: boolean; error?: string } {
+  const tool = availableTools.find((t) => t.name === toolRequest.name);
 
-  logger.info({ project_id, user_id, thread_id, messageLength: message.length }, 'Processing chat');
+  if (!tool) {
+    const availableNames = availableTools.map((t) => t.name).join(', ');
+    return {
+      valid: false,
+      error: `Unknown tool: ${toolRequest.name}. Available tools: ${availableNames || 'none'}`,
+    };
+  }
+
+  // Basic parameter validation
+  if (tool.parameters) {
+    const requiredParams = Object.entries(tool.parameters)
+      .filter(([_, v]) => v.required)
+      .map(([k]) => k);
+
+    for (const param of requiredParams) {
+      if (!(param in (toolRequest.args || {}))) {
+        return {
+          valid: false,
+          error: `Missing required parameter: ${param} for tool ${toolRequest.name}`,
+        };
+      }
+    }
+  }
+
+  return { valid: true };
+}
+
+export async function processChat(request: ChatRequest): Promise<ChatResponse> {
+  const { project_id, user_id, thread_id, message, tools, context: requestContext } = request;
+
+  logger.info({ project_id, user_id, thread_id, messageLength: message.length, toolsCount: tools.length }, 'Processing chat');
 
   // Get or create thread
   let threadIdToUse = thread_id;
@@ -26,6 +59,14 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
     });
     threadIdToUse = newThread.id;
     logger.debug({ threadId: threadIdToUse }, 'Created new thread');
+  } else {
+    // Verify thread exists
+    const existingThread = await prisma.thread.findUnique({
+      where: { id: threadIdToUse },
+    });
+    if (!existingThread) {
+      throw new NotFoundError('Thread', threadIdToUse);
+    }
   }
 
   // Store user message
@@ -43,14 +84,14 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
   });
 
   if (!project) {
-    throw new Error(`Project not found: ${project_id}`);
+    throw new NotFoundError('Project', project_id);
   }
 
   // Retrieve RAG context
   const ragContext = await retrieveContext(project_id, user_id, message, threadIdToUse);
 
-  // Assemble prompts
-  const systemPrompt = assembleSystemPrompt(project.name, project.roleStatement, ragContext);
+  // Assemble prompts with dynamic tools
+  const systemPrompt = assembleSystemPrompt(project.name, project.roleStatement, ragContext, tools);
   const userPrompt = assembleUserPrompt(message, ragContext);
 
   // Generate response
@@ -70,7 +111,7 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
 
   // Handle tool request
   if (agentResponse.mode === 'ACT' && agentResponse.tool_request) {
-    const validation = validateToolRequest(agentResponse.tool_request);
+    const validation = validateToolRequest(agentResponse.tool_request, tools);
     if (!validation.valid) {
       logger.warn({ error: validation.error }, 'Invalid tool request');
       // Convert to ASK mode with error
@@ -78,15 +119,18 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
       agentResponse.message = `I tried to use a tool but encountered an error: ${validation.error}. Could you clarify what you need?`;
       agentResponse.tool_request = null;
     } else {
-      // Store tool call for n8n callback
+      // Get tool definition for defaults
+      const toolDef = tools.find((t) => t.name === agentResponse.tool_request!.name);
+
+      // Store tool call for callback
       await prisma.toolCall.create({
         data: {
           projectId: project_id,
           threadId: threadIdToUse,
           name: agentResponse.tool_request.name,
           argsJson: JSON.stringify(agentResponse.tool_request.args),
-          requiresApproval: agentResponse.tool_request.requires_approval,
-          risk: agentResponse.tool_request.risk,
+          requiresApproval: agentResponse.tool_request.requires_approval ?? toolDef?.requires_approval ?? true,
+          risk: agentResponse.tool_request.risk ?? toolDef?.risk ?? 'medium',
           status: 'pending',
         },
       });
@@ -112,6 +156,7 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
         thread_id: threadIdToUse,
         mode: agentResponse.mode,
         has_tool_request: !!agentResponse.tool_request,
+        tools_available: tools.map((t) => t.name),
         source: requestContext?.source,
       }),
     },
@@ -191,7 +236,7 @@ export async function processToolResult(
   });
 
   if (!toolCall) {
-    throw new Error(`Tool call not found: ${toolCallId}`);
+    throw new NotFoundError('Tool call', toolCallId);
   }
 
   // Store tool result as message

@@ -15,14 +15,25 @@ export function extractJson(text: string): string | null {
     // Continue to extraction attempts
   }
 
-  // Try extracting from markdown code block
-  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (codeBlockMatch) {
-    try {
-      JSON.parse(codeBlockMatch[1]);
-      return codeBlockMatch[1];
-    } catch {
-      // Continue
+  // Try extracting from markdown code block (various formats)
+  const codeBlockPatterns = [
+    /```json\s*([\s\S]*?)\s*```/,
+    /```\s*([\s\S]*?)\s*```/,
+    /<json>\s*([\s\S]*?)\s*<\/json>/i,
+    /\[JSON\]\s*([\s\S]*?)\s*\[\/JSON\]/i,
+  ];
+
+  for (const pattern of codeBlockPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      try {
+        JSON.parse(match[1]);
+        return match[1];
+      } catch {
+        // Try fixing it
+        const fixed = tryFixJson(match[1]);
+        if (fixed) return fixed;
+      }
     }
   }
 
@@ -47,14 +58,29 @@ function tryFixJson(text: string): string | null {
   // Remove trailing commas before } or ]
   fixed = fixed.replace(/,\s*([\]}])/g, '$1');
 
-  // Try to fix unescaped quotes in strings (very basic)
-  // This is a heuristic and may not work for all cases
+  // Remove single-line comments
+  fixed = fixed.replace(/\/\/[^\n]*/g, '');
+
+  // Remove multi-line comments
+  fixed = fixed.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  // Fix unquoted keys (simple cases like { mode: "ACT" })
+  fixed = fixed.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
+
+  // Fix single quotes to double quotes (outside of already quoted strings)
+  fixed = fixed.replace(/:\s*'([^']*)'/g, ': "$1"');
+
+  // Remove trailing text after the JSON object
+  const lastBrace = fixed.lastIndexOf('}');
+  if (lastBrace !== -1 && lastBrace < fixed.length - 1) {
+    fixed = fixed.slice(0, lastBrace + 1);
+  }
 
   try {
     JSON.parse(fixed);
     return fixed;
   } catch {
-    logger.debug({ original: text }, 'Could not fix JSON');
+    logger.debug({ original: text.slice(0, 200) }, 'Could not fix JSON');
     return null;
   }
 }

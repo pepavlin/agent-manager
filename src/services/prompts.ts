@@ -1,5 +1,4 @@
-import { RetrievedContext } from '../types/index.js';
-import { getToolsForPrompt } from '../tools/registry.js';
+import { RetrievedContext, ToolInput } from '../types/index.js';
 
 const BASE_SYSTEM_PROMPT = `You are a project manager AI assistant. You help manage projects by understanding context from documents, tracking decisions, and coordinating work.
 
@@ -52,10 +51,34 @@ For each user message, you MUST choose exactly ONE mode:
 - Keep preferences/lessons concise (1 sentence each)
 - Newer preferences override older conflicting ones`;
 
+function formatToolsForPrompt(tools: ToolInput[]): string {
+  if (tools.length === 0) {
+    return 'No tools available. Use NOOP or ASK mode only.';
+  }
+
+  return tools.map((t) => {
+    let paramsDescription = '';
+    if (t.parameters) {
+      const params = Object.entries(t.parameters).map(([key, value]) => {
+        const required = value.required ? '(required)' : '(optional)';
+        return `    - ${key}: ${value.type} ${required} - ${value.description || 'no description'}`;
+      });
+      paramsDescription = params.join('\n');
+    }
+
+    return `- ${t.name}: ${t.description}
+  requires_approval: ${t.requires_approval}
+  risk: ${t.risk}
+  parameters:
+${paramsDescription || '    (none)'}`;
+  }).join('\n\n');
+}
+
 export function assembleSystemPrompt(
   projectName: string,
   roleStatement: string,
-  context: RetrievedContext
+  context: RetrievedContext,
+  tools: ToolInput[]
 ): string {
   const parts: string[] = [BASE_SYSTEM_PROMPT];
 
@@ -67,7 +90,7 @@ Role: ${roleStatement}`);
   // Tools available
   parts.push(`
 ## AVAILABLE TOOLS
-${getToolsForPrompt()}`);
+${formatToolsForPrompt(tools)}`);
 
   // Playbook / Rules
   if (context.playbook) {

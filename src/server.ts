@@ -8,6 +8,7 @@ import { config } from './config.js';
 import { logger, createChildLogger } from './utils/logger.js';
 import { prisma, connectDatabase, disconnectDatabase } from './db/client.js';
 import { registerRoutes } from './routes/index.js';
+import { isAppError } from './utils/errors.js';
 
 const serverLogger = createChildLogger('server');
 
@@ -133,7 +134,16 @@ async function buildApp(): Promise<FastifyInstance> {
       });
     }
 
-    // Handle known errors
+    // Handle custom app errors
+    if (isAppError(error)) {
+      return reply.status(error.statusCode).send({
+        error: error.message,
+        code: error.code,
+        details: error.details,
+      });
+    }
+
+    // Handle Fastify errors with statusCode
     if (error.statusCode) {
       return reply.status(error.statusCode).send({
         error: error.message,

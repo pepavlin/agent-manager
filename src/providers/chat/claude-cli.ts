@@ -3,6 +3,7 @@ import { IChatProvider } from './IChatProvider.js';
 import { config } from '../../config.js';
 import { createChildLogger } from '../../utils/logger.js';
 import { extractJson, createJsonRepairPrompt } from '../../utils/json-repair.js';
+import { ProviderError } from '../../utils/errors.js';
 
 const logger = createChildLogger('claude-cli-chat');
 
@@ -76,7 +77,7 @@ export class ClaudeCliChatProvider implements IChatProvider {
       const timer = setTimeout(() => {
         killed = true;
         proc.kill('SIGTERM');
-        reject(new Error(`Claude CLI timed out after ${this.timeout}ms`));
+        reject(new ProviderError('claude_cli', `Timed out after ${this.timeout}ms`));
       }, this.timeout);
 
       proc.stdout.on('data', (data) => {
@@ -115,7 +116,7 @@ export class ClaudeCliChatProvider implements IChatProvider {
         }
 
         if (!stdout || stdout.trim().length === 0) {
-          reject(new Error('Empty response from Claude CLI'));
+          reject(new ProviderError('claude_cli', 'Empty response'));
           return;
         }
 

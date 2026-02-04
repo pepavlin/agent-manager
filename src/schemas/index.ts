@@ -56,6 +56,30 @@ export const DocumentSchema = {
   },
 } as const;
 
+// Tool input schema for chat requests
+export const ToolInputSchema = {
+  type: 'object',
+  required: ['name', 'description'],
+  properties: {
+    name: { type: 'string', description: 'Unique tool identifier (e.g., "jira.create_ticket")' },
+    description: { type: 'string', description: 'What the tool does' },
+    parameters: {
+      type: 'object',
+      additionalProperties: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', description: 'Parameter type (string, number, boolean, etc.)' },
+          description: { type: 'string', description: 'Parameter description' },
+          required: { type: 'boolean', description: 'Whether parameter is required' },
+        },
+      },
+      description: 'Tool parameters definition',
+    },
+    requires_approval: { type: 'boolean', default: true, description: 'Whether tool execution needs approval' },
+    risk: { type: 'string', enum: ['low', 'medium', 'high'], default: 'medium', description: 'Risk level' },
+  },
+} as const;
+
 // Chat schemas
 export const ChatRequestBody = {
   type: 'object',
@@ -65,6 +89,12 @@ export const ChatRequestBody = {
     user_id: { type: 'string', description: 'User ID' },
     thread_id: { type: 'string', description: 'Optional thread ID to continue conversation' },
     message: { type: 'string', minLength: 1, description: 'User message' },
+    tools: {
+      type: 'array',
+      items: ToolInputSchema,
+      default: [],
+      description: 'Available tools for this request. Each project/request can have different tools.',
+    },
     context: {
       type: 'object',
       properties: {

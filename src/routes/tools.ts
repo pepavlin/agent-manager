@@ -3,6 +3,7 @@ import { processToolResult } from '../services/agent.js';
 import { ToolResultSchema } from '../types/index.js';
 import { createChildLogger } from '../utils/logger.js';
 import { ToolResultBody, ErrorResponse } from '../schemas/index.js';
+import { isAppError } from '../utils/errors.js';
 
 const logger = createChildLogger('routes:tools');
 
@@ -47,8 +48,12 @@ export async function toolRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       logger.error({ error: err, tool_call_id }, 'Tool result processing failed');
 
-      if (err instanceof Error && err.message.includes('not found')) {
-        return reply.status(404).send({ error: err.message });
+      if (isAppError(err)) {
+        return reply.status(err.statusCode).send({
+          error: err.message,
+          code: err.code,
+          details: err.details,
+        });
       }
 
       return reply.status(500).send({
