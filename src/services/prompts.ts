@@ -1,4 +1,4 @@
-import { RetrievedContext, ToolInput } from '../types/index.js';
+import { RetrievedContext, ToolInput, MemoryItem } from '../types/index.js';
 
 const BASE_SYSTEM_PROMPT = `You are a project manager AI assistant. You help manage projects by understanding context from documents, tracking decisions, and coordinating work.
 
@@ -45,6 +45,28 @@ For each user message, you MUST choose exactly ONE mode:
   }
 }
 
+## MEMORY LAYERS
+You have access to multiple memory layers:
+
+1. **KB Documents** (authoritative source of truth)
+   - FACTS: Project information, specs, documentation
+   - RULES: Guidelines and processes you must follow
+   - STATE: Current project state and updates
+
+2. **Memory Items** (secondary, learnable)
+   - EVENTS: What happened (append-only log)
+   - DECISIONS: Agreed-upon choices
+   - OPEN_LOOPS: Commitments and pending items
+   - IDEAS: Proposed improvements
+   - METRICS: Time-limited measurements
+
+## SAFE LEARNING RULES
+- You CANNOT write facts directly to the knowledge base
+- To learn new information, use memory.propose_add tool
+- Facts/decisions/open_loops require user approval
+- Events and metrics with TTL can be auto-approved
+- Always state confidence level for proposed facts
+
 ## MEMORY EXTRACTION
 - Only add preferences that are stable, actionable, and explicitly stated by user
 - Only add lessons from confirmed outcomes (success or failure)
@@ -72,6 +94,55 @@ function formatToolsForPrompt(tools: ToolInput[]): string {
   parameters:
 ${paramsDescription || '    (none)'}`;
   }).join('\n\n');
+}
+
+function formatMemoryItem(item: MemoryItem): string {
+  const content = item.content as Record<string, unknown>;
+  const contentStr = Object.entries(content)
+    .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+    .join(', ');
+  const status = item.status ? ` [${item.status}]` : '';
+  return `- [${item.type}]${status} ${item.title}: ${contentStr}`;
+}
+
+function formatSituationalPicture(context: RetrievedContext): string {
+  const parts: string[] = [];
+
+  if (!context.memoryContext) {
+    return '';
+  }
+
+  const { openLoops, recentEvents, activeIdeas, relevantMemory } = context.memoryContext;
+
+  // Open loops (commitments, pending items)
+  if (openLoops.length > 0) {
+    parts.push('### Open Loops (Commitments/Pending)');
+    parts.push(openLoops.map(formatMemoryItem).join('\n'));
+  }
+
+  // Recent events
+  if (recentEvents.length > 0) {
+    parts.push('### Recent Events');
+    parts.push(recentEvents.map(formatMemoryItem).join('\n'));
+  }
+
+  // Active ideas
+  if (activeIdeas.length > 0) {
+    parts.push('### Active Ideas');
+    parts.push(activeIdeas.map(formatMemoryItem).join('\n'));
+  }
+
+  // Relevant memory (semantic match)
+  if (relevantMemory.length > 0) {
+    parts.push('### Relevant Memory');
+    parts.push(relevantMemory.map(formatMemoryItem).join('\n'));
+  }
+
+  if (parts.length === 0) {
+    return '';
+  }
+
+  return '\n## SITUATIONAL PICTURE\n' + parts.join('\n\n');
 }
 
 export function assembleSystemPrompt(
@@ -137,6 +208,12 @@ export function assembleUserPrompt(
       parts.push(chunk.text);
       parts.push('---');
     }
+  }
+
+  // Situational picture (memory context)
+  const situationalPicture = formatSituationalPicture(context);
+  if (situationalPicture) {
+    parts.push(situationalPicture);
   }
 
   // Recent conversation

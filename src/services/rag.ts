@@ -1,8 +1,14 @@
 import { prisma } from '../db/client.js';
 import { getEmbeddingProvider } from '../providers/embeddings/index.js';
 import { searchSimilar, SearchResult } from './qdrant.js';
-import { RetrievedContext } from '../types/index.js';
+import { RetrievedContext, MemoryContext, MemoryItem } from '../types/index.js';
 import { createChildLogger } from '../utils/logger.js';
+import {
+  getOpenLoops,
+  getRecentEvents,
+  getActiveIdeas,
+  searchMemoryItems,
+} from './memory-items.js';
 
 const logger = createChildLogger('rag');
 
@@ -10,6 +16,10 @@ const KB_CHUNKS_LIMIT = 8;
 const PREFERENCES_LIMIT = 10;
 const LESSONS_LIMIT = 5;
 const RECENT_MESSAGES_LIMIT = 20;
+const OPEN_LOOPS_LIMIT = 10;
+const RECENT_EVENTS_LIMIT = 5;
+const ACTIVE_IDEAS_LIMIT = 5;
+const RELEVANT_MEMORY_LIMIT = 8;
 
 export interface RAGOptions {
   kbLimit?: number;
@@ -17,6 +27,11 @@ export interface RAGOptions {
   lessonsLimit?: number;
   messagesLimit?: number;
   categories?: string[];
+  includeMemoryContext?: boolean;
+  openLoopsLimit?: number;
+  recentEventsLimit?: number;
+  activeIdeasLimit?: number;
+  relevantMemoryLimit?: number;
 }
 
 export async function retrieveContext(
@@ -118,6 +133,26 @@ export async function retrieveContext(
     }));
   }
 
+  // Retrieve memory context if enabled
+  let memoryContext: MemoryContext | undefined;
+  if (options.includeMemoryContext !== false) {
+    try {
+      memoryContext = await retrieveMemoryContext(
+        projectId,
+        userId,
+        query,
+        {
+          openLoopsLimit: options.openLoopsLimit,
+          recentEventsLimit: options.recentEventsLimit,
+          activeIdeasLimit: options.activeIdeasLimit,
+          relevantMemoryLimit: options.relevantMemoryLimit,
+        }
+      );
+    } catch (error) {
+      logger.warn({ error, projectId }, 'Failed to retrieve memory context, continuing without');
+    }
+  }
+
   logger.debug(
     {
       kbChunks: kbChunks.length,
@@ -126,6 +161,9 @@ export async function retrieveContext(
       hasPlaybook: !!playbook,
       hasBrief: !!brief,
       messages: recentMessages.length,
+      hasMemoryContext: !!memoryContext,
+      openLoops: memoryContext?.openLoops.length ?? 0,
+      recentEvents: memoryContext?.recentEvents.length ?? 0,
     },
     'Context retrieved'
   );
@@ -137,5 +175,79 @@ export async function retrieveContext(
     playbook,
     brief,
     recentMessages,
+    memoryContext,
+  };
+}
+
+/**
+ * Retrieve memory context for situational awareness
+ */
+export interface MemoryContextOptions {
+  openLoopsLimit?: number;
+  recentEventsLimit?: number;
+  activeIdeasLimit?: number;
+  relevantMemoryLimit?: number;
+}
+
+export async function retrieveMemoryContext(
+  projectId: string,
+  userId: string,
+  query: string,
+  options: MemoryContextOptions = {}
+): Promise<MemoryContext> {
+  const {
+    openLoopsLimit = OPEN_LOOPS_LIMIT,
+    recentEventsLimit = RECENT_EVENTS_LIMIT,
+    activeIdeasLimit = ACTIVE_IDEAS_LIMIT,
+    relevantMemoryLimit = RELEVANT_MEMORY_LIMIT,
+  } = options;
+
+  logger.debug({ projectId, userId, query: query.slice(0, 100) }, 'Retrieving memory context');
+
+  // Run all memory queries in parallel
+  const [openLoops, recentEvents, activeIdeas, relevantMemory] = await Promise.all([
+    // Open loops (not done) - regardless of similarity
+    getOpenLoops(projectId, userId, openLoopsLimit).catch((err) => {
+      logger.warn({ err }, 'Failed to get open loops');
+      return [] as MemoryItem[];
+    }),
+
+    // Recent events - regardless of similarity
+    getRecentEvents(projectId, recentEventsLimit).catch((err) => {
+      logger.warn({ err }, 'Failed to get recent events');
+      return [] as MemoryItem[];
+    }),
+
+    // Active ideas
+    getActiveIdeas(projectId, activeIdeasLimit).catch((err) => {
+      logger.warn({ err }, 'Failed to get active ideas');
+      return [] as MemoryItem[];
+    }),
+
+    // Semantic search for relevant memory items
+    searchMemoryItems(projectId, query, relevantMemoryLimit, {
+      types: ['fact', 'decision', 'lesson', 'preference'],
+      excludeExpired: true,
+    }).catch((err) => {
+      logger.warn({ err }, 'Failed to search memory items');
+      return [] as MemoryItem[];
+    }),
+  ]);
+
+  logger.debug(
+    {
+      openLoops: openLoops.length,
+      recentEvents: recentEvents.length,
+      activeIdeas: activeIdeas.length,
+      relevantMemory: relevantMemory.length,
+    },
+    'Memory context retrieved'
+  );
+
+  return {
+    openLoops,
+    recentEvents,
+    relevantMemory,
+    activeIdeas,
   };
 }

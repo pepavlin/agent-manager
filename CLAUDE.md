@@ -98,12 +98,67 @@ Documents uploaded via `POST /projects/:id/docs` are:
 3. Embedded and stored in Qdrant (collection per project: `kb_<projectId>`)
 4. Metadata stored in Postgres (`kb_chunks` table)
 
-### Memory System
+### Memory System (4-Layer Architecture)
 
-- **Preferences**: User rules extracted from conversation, stored per project+user
-- **Lessons**: Outcomes learned from tool execution results
+The memory system supports multiple layers of memory with different purposes:
 
-Both injected into system prompt via `src/services/rag.ts`.
+#### Layer 1: KB Documents (Constitution)
+- **FACTS**: Project information, specs, documentation
+- **RULES**: Guidelines and processes (playbook)
+- **STATE**: Current project state and updates
+- Stored in Qdrant collection `kb_<projectId>`
+- Authoritative source of truth
+
+#### Layer 2: Memory Items
+Stored in `memory_items` table with Qdrant collection `mem_<projectId>`:
+
+| Type | Description | Auto-Approve |
+|------|-------------|--------------|
+| `fact` | Learned project facts | No |
+| `rule` | User-defined rules | No |
+| `decision` | Agreed-upon choices | No |
+| `open_loop` | Commitments, pending items | No |
+| `idea` | Proposed improvements | No |
+| `event` | What happened (append-only log) | Yes |
+| `metric` | Time-limited measurements | Yes (with TTL) |
+| `preference` | User preferences (legacy compat) | No |
+| `lesson` | Learned outcomes (legacy compat) | No |
+
+#### Layer 3: Legacy Memory
+- **Preferences**: User rules (write-through to memory_items)
+- **Lessons**: Outcomes learned (write-through to memory_items)
+
+#### Memory Item Statuses
+- `proposed` - Awaiting user approval
+- `accepted` - Approved by user
+- `rejected` - Rejected by user
+- `done` - Completed (for open_loops)
+- `blocked` - Blocked by dependency
+- `active` - Currently active
+
+#### Safe Learning (Proposal Flow)
+1. Agent proposes memory via `memory.propose_add` tool
+2. Events and metrics with TTL are auto-approved
+3. Facts/decisions/open_loops require user approval via n8n
+4. User approves/rejects in n8n
+5. n8n calls `POST /tools/result` with decision
+6. API updates memory item status accordingly
+
+#### Built-in Memory Tools
+```typescript
+// Available automatically in all chat requests
+memory.propose_add     // Propose new memory item
+memory.propose_update  // Propose updating existing item
+```
+
+#### Situational Picture
+RAG retrieval includes memory context:
+- Open loops (commitments not done)
+- Recent events (last 5)
+- Active ideas
+- Semantically relevant memory items
+
+Services: `src/services/memory-items.ts`, `src/services/memory.ts`, `src/services/rag.ts`
 
 ## Database Schema
 
@@ -113,7 +168,8 @@ Key tables in `prisma/schema.prisma`:
 - `kb_chunks` - Text chunks with Qdrant point references
 - `threads` / `messages` - Conversation history
 - `tool_calls` - Pending/completed tool executions
-- `preferences` / `lessons` - Memory system
+- `memory_items` - New unified memory system (facts, events, decisions, etc.)
+- `preferences` / `lessons` - Legacy memory system (write-through to memory_items)
 
 ## API Endpoints (Simplified)
 

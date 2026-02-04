@@ -22,6 +22,7 @@ model Project {
   lessons     Lesson[]
   toolCalls   ToolCall[]
   auditLogs   AuditLog[]
+  memoryItems MemoryItem[]
 
   @@map("projects")
 }
@@ -180,4 +181,61 @@ model AuditLog {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("audit_logs")
+}
+
+// Memory Item Enums
+enum MemoryItemType {
+  fact
+  rule
+  event
+  decision
+  open_loop
+  idea
+  metric
+  preference
+  lesson
+}
+
+enum MemoryItemSource {
+  user_chat
+  doc_upload
+  tool_result
+  cron
+  system
+}
+
+enum MemoryItemStatus {
+  proposed
+  accepted
+  rejected
+  done
+  blocked
+  active
+}
+
+model MemoryItem {
+  id            String            @id @default(uuid())
+  projectId     String            @map("project_id")
+  userId        String?           @map("user_id")
+  type          MemoryItemType
+  title         String
+  content       Json
+  status        MemoryItemStatus? @default(proposed)
+  source        MemoryItemSource  @default(user_chat)
+  confidence    Float             @default(0.5)
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  expiresAt     DateTime?         @map("expires_at")
+  supersedesId  String?           @map("supersedes_id")
+  tags          String[]          @default([])
+  qdrantPointId String?           @map("qdrant_point_id")
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  supersedes   MemoryItem?   @relation("Supersedes", fields: [supersedesId], references: [id])
+  supersededBy MemoryItem[]  @relation("Supersedes")
+
+  @@index([projectId, type])
+  @@index([projectId, userId, type])
+  @@index([projectId, expiresAt])
+  @@map("memory_items")
 }

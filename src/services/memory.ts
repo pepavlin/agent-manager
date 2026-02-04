@@ -1,6 +1,7 @@
 import { prisma } from '../db/client.js';
 import { MemoryUpdates } from '../types/index.js';
 import { createChildLogger } from '../utils/logger.js';
+import { createMemoryItem } from './memory-items.js';
 
 const logger = createChildLogger('memory');
 
@@ -37,6 +38,7 @@ export async function applyMemoryUpdates(
     });
 
     if (!existing) {
+      // Write to old table (backward compatibility)
       await prisma.preference.create({
         data: {
           projectId,
@@ -46,6 +48,24 @@ export async function applyMemoryUpdates(
           isActive: true,
         },
       });
+
+      // Write-through to new memory_items table
+      try {
+        await createMemoryItem({
+          projectId,
+          userId,
+          type: 'preference',
+          title: ruleText.trim().slice(0, 100),
+          content: { rule_text: ruleText.trim() },
+          status: 'accepted',
+          source: 'user_chat',
+          confidence: 0.8,
+          tags: [],
+        });
+      } catch (error) {
+        logger.warn({ error, ruleText: ruleText.slice(0, 50) }, 'Failed to write preference to memory_items');
+      }
+
       logger.debug({ ruleText: ruleText.slice(0, 50) }, 'Added preference');
     }
   }
@@ -85,6 +105,7 @@ export async function applyMemoryUpdates(
     });
 
     if (!existing) {
+      // Write to old table (backward compatibility)
       await prisma.lesson.create({
         data: {
           projectId,
@@ -92,6 +113,24 @@ export async function applyMemoryUpdates(
           lessonText: lessonText.trim(),
         },
       });
+
+      // Write-through to new memory_items table
+      try {
+        await createMemoryItem({
+          projectId,
+          userId,
+          type: 'lesson',
+          title: lessonText.trim().slice(0, 100),
+          content: { lesson_text: lessonText.trim() },
+          status: 'accepted',
+          source: 'user_chat',
+          confidence: 0.7,
+          tags: [],
+        });
+      } catch (error) {
+        logger.warn({ error, lessonText: lessonText.slice(0, 50) }, 'Failed to write lesson to memory_items');
+      }
+
       logger.debug({ lessonText: lessonText.slice(0, 50) }, 'Added lesson');
     }
   }

@@ -23,6 +23,21 @@ export async function toolRoutes(app: FastifyInstance): Promise<void> {
 
 ---
 
+## Memory Tools Flow
+
+For memory proposal tools (\`memory.propose_add\`, \`memory.propose_update\`):
+1. Agent returns \`tool_request\` with \`name: "memory.propose_add"\`
+2. N8N shows proposal to user for approval
+3. User approves/rejects
+4. N8N calls this endpoint:
+   - Approved: \`{ ok: true, data: { memory_item_id: "..." } }\`
+   - Rejected: \`{ ok: false, error: "User rejected" }\`
+5. API stores memory item accordingly (accepted/rejected status)
+
+**Note:** Events and metrics with TTL are auto-approved and don't go through this flow.
+
+---
+
 ## Example Request (Success)
 \`\`\`json
 {
@@ -33,6 +48,18 @@ export async function toolRoutes(app: FastifyInstance): Promise<void> {
     "ticket_id": "ECOM-1234",
     "ticket_url": "https://jira.example.com/browse/ECOM-1234",
     "status": "created"
+  }
+}
+\`\`\`
+
+## Example Request (Memory Proposal Approved)
+\`\`\`json
+{
+  "tool_call_id": "tc_mem123xyz",
+  "project_id": "clx1234567890abcdef",
+  "ok": true,
+  "data": {
+    "memory_item_id": "mem_abc123"
   }
 }
 \`\`\`

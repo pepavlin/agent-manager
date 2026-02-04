@@ -130,6 +130,7 @@ export interface RetrievedContext {
     role: string;
     content: string;
   }>;
+  memoryContext?: MemoryContext;
 }
 
 // Embedding provider result
@@ -137,4 +138,125 @@ export interface EmbeddingResult {
   vectors: number[][];
   model: string;
   dims: number;
+}
+
+// Memory Item Types
+export const MemoryItemTypeSchema = z.enum([
+  'fact',
+  'rule',
+  'event',
+  'decision',
+  'open_loop',
+  'idea',
+  'metric',
+  'preference',
+  'lesson',
+]);
+export type MemoryItemType = z.infer<typeof MemoryItemTypeSchema>;
+
+export const MemoryItemSourceSchema = z.enum([
+  'user_chat',
+  'doc_upload',
+  'tool_result',
+  'cron',
+  'system',
+]);
+export type MemoryItemSource = z.infer<typeof MemoryItemSourceSchema>;
+
+export const MemoryItemStatusSchema = z.enum([
+  'proposed',
+  'accepted',
+  'rejected',
+  'done',
+  'blocked',
+  'active',
+]);
+export type MemoryItemStatus = z.infer<typeof MemoryItemStatusSchema>;
+
+// Memory Item schemas
+export const MemoryItemContentSchema = z.record(z.unknown());
+export type MemoryItemContent = z.infer<typeof MemoryItemContentSchema>;
+
+export const CreateMemoryItemSchema = z.object({
+  projectId: z.string(),
+  userId: z.string().optional(),
+  type: MemoryItemTypeSchema,
+  title: z.string().min(1),
+  content: MemoryItemContentSchema,
+  status: MemoryItemStatusSchema.optional().default('proposed'),
+  source: MemoryItemSourceSchema.optional().default('user_chat'),
+  confidence: z.number().min(0).max(1).optional().default(0.5),
+  expiresAt: z.date().optional(),
+  supersedesId: z.string().optional(),
+  tags: z.array(z.string()).optional().default([]),
+});
+export type CreateMemoryItemRequest = z.infer<typeof CreateMemoryItemSchema>;
+
+export const UpdateMemoryItemSchema = z.object({
+  title: z.string().min(1).optional(),
+  content: MemoryItemContentSchema.optional(),
+  status: MemoryItemStatusSchema.optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  expiresAt: z.date().nullable().optional(),
+  tags: z.array(z.string()).optional(),
+});
+export type UpdateMemoryItemRequest = z.infer<typeof UpdateMemoryItemSchema>;
+
+// Memory Item (full object from database)
+export interface MemoryItem {
+  id: string;
+  projectId: string;
+  userId: string | null;
+  type: MemoryItemType;
+  title: string;
+  content: MemoryItemContent;
+  status: MemoryItemStatus | null;
+  source: MemoryItemSource;
+  confidence: number;
+  createdAt: Date;
+  updatedAt: Date;
+  expiresAt: Date | null;
+  supersedesId: string | null;
+  tags: string[];
+  qdrantPointId: string | null;
+}
+
+// Memory context for retrieval
+export interface MemoryContext {
+  openLoops: MemoryItem[];
+  recentEvents: MemoryItem[];
+  relevantMemory: MemoryItem[];
+  activeIdeas: MemoryItem[];
+}
+
+// Memory proposal tool schemas
+export const MemoryProposeAddSchema = z.object({
+  type: MemoryItemTypeSchema,
+  title: z.string().min(1),
+  content: MemoryItemContentSchema,
+  status: MemoryItemStatusSchema.optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  tags: z.array(z.string()).optional(),
+  expires_in_seconds: z.number().positive().optional(),
+});
+export type MemoryProposeAddRequest = z.infer<typeof MemoryProposeAddSchema>;
+
+export const MemoryProposeUpdateSchema = z.object({
+  memory_item_id: z.string(),
+  patch: UpdateMemoryItemSchema,
+  reason: z.string().min(1),
+});
+export type MemoryProposeUpdateRequest = z.infer<typeof MemoryProposeUpdateSchema>;
+
+// Memory point payload for Qdrant
+export interface MemoryPointPayload {
+  [key: string]: unknown;
+  memory_item_id: string;
+  type: MemoryItemType;
+  title: string;
+  content_text: string;
+  status: string | null;
+  created_at: string;
+  expires_at: string | null;
+  user_id: string | null;
 }
