@@ -1,11 +1,9 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import { IChatProvider } from './IChatProvider.js';
 import { config } from '../../config.js';
 import { createChildLogger } from '../../utils/logger.js';
 import { extractJson, createJsonRepairPrompt } from '../../utils/json-repair.js';
 
-const execFileAsync = promisify(execFile);
 const logger = createChildLogger('claude-cli-chat');
 
 const MAX_STDOUT_SIZE = 100000; // 100KB
@@ -25,7 +23,7 @@ export class ClaudeCliChatProvider implements IChatProvider {
   async generateJSON(input: { system: string; user: string }): Promise<string> {
     logger.debug({ systemLength: input.system.length, userLength: input.user.length }, 'Generating JSON via CLI');
 
-    // Combine system and user into a single prompt for CLI
+    // Combine system and user into a single prompt
     const fullPrompt = `${input.system}\n\n---\n\nUser message:\n${input.user}\n\nRespond with ONLY valid JSON, no markdown formatting or explanation.`;
 
     let lastOutput = '';
@@ -62,33 +60,71 @@ export class ClaudeCliChatProvider implements IChatProvider {
     throw new Error('Failed to generate valid JSON');
   }
 
-  private async runCli(prompt: string): Promise<string> {
-    const args = ['--print', prompt];
+  private runCli(prompt: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let stdout = '';
+      let stderr = '';
+      let killed = false;
 
-    try {
-      const { stdout, stderr } = await execFileAsync(this.command, args, {
+      // Use spawn with stdin to avoid argument length limits
+      const proc = spawn(this.command, ['--print', '-'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
         timeout: this.timeout,
-        maxBuffer: MAX_STDOUT_SIZE,
-        encoding: 'utf-8',
       });
 
-      if (stderr) {
-        logger.warn({ stderr }, 'CLI stderr output');
-      }
+      // Set timeout manually as spawn timeout doesn't always work
+      const timer = setTimeout(() => {
+        killed = true;
+        proc.kill('SIGTERM');
+        reject(new Error(`Claude CLI timed out after ${this.timeout}ms`));
+      }, this.timeout);
 
-      if (!stdout || stdout.trim().length === 0) {
-        throw new Error('Empty response from Claude CLI');
-      }
+      proc.stdout.on('data', (data) => {
+        stdout += data.toString();
+        if (stdout.length > MAX_STDOUT_SIZE) {
+          killed = true;
+          proc.kill('SIGTERM');
+          reject(new Error('Response too large'));
+        }
+      });
 
-      return stdout.trim();
-    } catch (error: unknown) {
-      if (error && typeof error === 'object' && 'killed' in error && error.killed) {
-        throw new Error(`Claude CLI timed out after ${this.timeout}ms`);
-      }
-      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-        throw new Error(`Claude CLI command not found: ${this.command}. Ensure Claude Code is installed and in PATH.`);
-      }
-      throw error;
-    }
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('error', (error) => {
+        clearTimeout(timer);
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          reject(new Error(`Claude CLI command not found: ${this.command}. Ensure Claude Code is installed and in PATH.`));
+        } else {
+          reject(error);
+        }
+      });
+
+      proc.on('close', (code) => {
+        clearTimeout(timer);
+        if (killed) return;
+
+        if (stderr) {
+          logger.warn({ stderr }, 'CLI stderr output');
+        }
+
+        if (code !== 0) {
+          reject(new Error(`Claude CLI exited with code ${code}: ${stderr || 'No error output'}`));
+          return;
+        }
+
+        if (!stdout || stdout.trim().length === 0) {
+          reject(new Error('Empty response from Claude CLI'));
+          return;
+        }
+
+        resolve(stdout.trim());
+      });
+
+      // Write prompt to stdin and close
+      proc.stdin.write(prompt);
+      proc.stdin.end();
+    });
   }
 }
