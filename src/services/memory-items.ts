@@ -344,12 +344,19 @@ export async function searchMemoryItems(
     return [];
   }
 
-  // Get full memory items from database
+  // Get full memory items from database (with expiry filtering at DB level)
   const itemIds = results.map((r) => r.payload.memory_item_id);
+  const where: Record<string, unknown> = {
+    id: { in: itemIds },
+  };
+  if (filter?.excludeExpired) {
+    where.OR = [
+      { expiresAt: null },
+      { expiresAt: { gt: new Date() } },
+    ];
+  }
   const items = await prisma.memoryItem.findMany({
-    where: {
-      id: { in: itemIds },
-    },
+    where,
   });
 
   // Map items with scores

@@ -288,12 +288,9 @@ export async function searchMemory(
       });
     }
 
-    if (filter?.excludeExpired) {
-      mustConditions.push({
-        key: 'expires_at',
-        range: { gt: new Date().toISOString() },
-      });
-    }
+    // NOTE: excludeExpired is handled at the application level (in searchMemoryItems)
+    // rather than in Qdrant, because items with expires_at=null (e.g. facts that never expire)
+    // would be incorrectly excluded by a range filter.
 
     const results = await qdrant.search(collectionName, {
       vector: queryVector,
