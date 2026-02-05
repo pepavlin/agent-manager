@@ -450,9 +450,9 @@ describe('Agent Service', () => {
       });
 
       expect(result.response_json.mode).toBe('ACT');
-      // Tool call should be pending (not auto-approved)
+      // All memory tools are now auto-approved
       const toolCallArg = vi.mocked(prisma.toolCall.create).mock.calls[0][0];
-      expect(toolCallArg.data.status).toBe('pending');
+      expect(toolCallArg.data.status).toBe('completed');
     });
 
     it('should auto-approve memory metric with TTL', async () => {

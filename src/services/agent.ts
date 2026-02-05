@@ -11,12 +11,13 @@ import {
   ToolInput,
   ToolRequest,
   MemoryProposeAddSchema,
+  MemoryProposeUpdateSchema,
 } from '../types/index.js';
 import { extractJson } from '../utils/json-repair.js';
 import { createChildLogger } from '../utils/logger.js';
 import { NotFoundError } from '../utils/errors.js';
 import {
-  proposeMemoryItem,
+  createMemoryItem,
   createEvent,
   createMetric,
   updateMemoryItem,
@@ -100,26 +101,8 @@ const MEMORY_TOOLS: ToolInput[] = [
  * Check if a memory tool request should be auto-approved
  */
 function shouldAutoApproveMemoryTool(toolRequest: ToolRequest): boolean {
-  if (toolRequest.name !== 'memory.propose_add') {
-    return false;
-  }
-
-  const args = toolRequest.args as Record<string, unknown>;
-  const type = args.type as string;
-  const expiresInSeconds = args.expires_in_seconds as number | undefined;
-
-  // Events are always auto-approved
-  if (type === 'event') {
-    return true;
-  }
-
-  // Metrics with TTL are auto-approved
-  if (type === 'metric' && expiresInSeconds && expiresInSeconds > 0) {
-    return true;
-  }
-
-  // Facts, decisions, open_loops, ideas require approval
-  return false;
+  // Auto-approve all memory tools (propose_add and propose_update)
+  return toolRequest.name.startsWith('memory.');
 }
 
 /**
@@ -142,7 +125,7 @@ async function executeMemoryTool(
         ? new Date(Date.now() + args.expires_in_seconds * 1000)
         : undefined;
 
-      // For auto-approved types, create directly with accepted status
+      // Events use dedicated helper
       if (args.type === 'event') {
         const item = await createEvent(projectId, args.title, args.content, {
           userId,
@@ -152,6 +135,7 @@ async function executeMemoryTool(
         return { ok: true, data: { memory_item_id: item.id, status: 'accepted' } };
       }
 
+      // Metrics with TTL use dedicated helper
       if (args.type === 'metric' && args.expires_in_seconds) {
         const item = await createMetric(
           projectId,
@@ -163,20 +147,32 @@ async function executeMemoryTool(
         return { ok: true, data: { memory_item_id: item.id, status: 'accepted' } };
       }
 
-      // For other types, create as proposed
-      const item = await proposeMemoryItem({
+      // All other types (fact, decision, open_loop, idea, etc.) - auto-approve
+      const item = await createMemoryItem({
         projectId,
         userId,
         type: args.type,
         title: args.title,
         content: args.content,
+        status: 'accepted',
         source: 'user_chat',
         confidence: args.confidence ?? 0.5,
         expiresAt,
         tags: args.tags ?? [],
       });
 
-      return { ok: true, data: { memory_item_id: item.id, status: 'proposed' } };
+      return { ok: true, data: { memory_item_id: item.id, status: 'accepted' } };
+    }
+
+    if (toolRequest.name === 'memory.propose_update') {
+      const parsed = MemoryProposeUpdateSchema.safeParse(toolRequest.args);
+      if (!parsed.success) {
+        return { ok: false, error: `Invalid arguments: ${parsed.error.message}` };
+      }
+
+      const args = parsed.data;
+      const item = await updateMemoryItem(args.memory_item_id, args.patch);
+      return { ok: true, data: { memory_item_id: item.id, status: item.status } };
     }
 
     return { ok: false, error: `Unknown memory tool: ${toolRequest.name}` };
