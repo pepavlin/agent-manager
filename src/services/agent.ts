@@ -279,12 +279,18 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
 
   // Generate response
   const chatProvider = getChatProvider();
-  const rawResponse = await chatProvider.generateJSON({
-    system: systemPrompt,
-    user: userPrompt,
-  });
+  let rawResponse: string;
+  try {
+    rawResponse = await chatProvider.generateJSON({
+      system: systemPrompt,
+      user: userPrompt,
+    });
+  } catch (providerError) {
+    logger.error({ error: providerError }, 'Chat provider failed to generate response');
+    rawResponse = '';
+  }
 
-  // Parse and validate response
+  // Parse and validate response (gracefully falls back to ASK on bad/empty input)
   const agentResponse = parseAgentResponse(rawResponse);
 
   // Apply memory updates

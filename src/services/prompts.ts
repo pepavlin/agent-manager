@@ -245,11 +245,29 @@ export function assembleUserPrompt(
     parts.push(situationalPicture);
   }
 
-  // Recent conversation
+  // Recent conversation (with per-message and total budget limits)
   if (context.recentMessages.length > 0) {
-    parts.push('\n## RECENT CONVERSATION');
-    for (const msg of context.recentMessages) {
-      parts.push(`${msg.role.toUpperCase()}: ${msg.content}`);
+    const MAX_MSG_CHARS = 1000;
+    const MAX_CONVERSATION_CHARS = 6000;
+    let conversationBudget = MAX_CONVERSATION_CHARS;
+    const conversationLines: string[] = [];
+
+    // Include most recent messages first (reverse, then re-reverse)
+    const reversed = [...context.recentMessages].reverse();
+    for (const msg of reversed) {
+      let content = msg.content;
+      if (content.length > MAX_MSG_CHARS) {
+        content = content.slice(0, MAX_MSG_CHARS) + '... [truncated]';
+      }
+      const line = `${msg.role.toUpperCase()}: ${content}`;
+      if (conversationBudget - line.length < 0) break;
+      conversationBudget -= line.length;
+      conversationLines.unshift(line);
+    }
+
+    if (conversationLines.length > 0) {
+      parts.push('\n## RECENT CONVERSATION');
+      parts.push(...conversationLines);
     }
   }
 
