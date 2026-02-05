@@ -10,7 +10,8 @@ RUN apk add --no-cache openssl bash git
 RUN npm install -g @anthropic-ai/claude-code
 
 # Copy entrypoint script (needed when running builder stage via dev override)
-COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Copy package files
 COPY package*.json ./
@@ -58,7 +59,8 @@ RUN npx prisma generate
 COPY --from=builder /app/dist ./dist
 
 # Copy entrypoint script
-COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Create data directory for uploads
 RUN mkdir -p /app/data/uploads && chown -R agent:nodejs /app/data
