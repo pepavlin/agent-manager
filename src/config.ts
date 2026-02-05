@@ -36,10 +36,6 @@ const configSchema = z.object({
   claudeCliCmd: z.string().default('claude'),
   claudeCliTimeout: z.coerce.number().default(60000),
 
-  // Claude OAuth (enables API mode for claude_cli provider in Docker)
-  claudeOauthToken: z.string().optional(),
-  claudeOauthRefreshToken: z.string().optional(),
-
   // Ollama
   ollamaBaseUrl: z.string().default('http://localhost:11434'),
   ollamaEmbeddingModel: z.string().default('nomic-embed-text'),
@@ -77,8 +73,6 @@ function loadConfig(): z.infer<typeof configSchema> {
     anthropicModel: process.env.ANTHROPIC_MODEL,
     claudeCliCmd: process.env.CLAUDE_CLI_CMD,
     claudeCliTimeout: process.env.CLAUDE_CLI_TIMEOUT,
-    claudeOauthToken: process.env.CLAUDE_OAUTH_TOKEN,
-    claudeOauthRefreshToken: process.env.CLAUDE_OAUTH_REFRESH_TOKEN,
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL,
     ollamaEmbeddingModel: process.env.OLLAMA_EMBEDDING_MODEL,
     embeddingDims: process.env.EMBEDDING_DIMS,
