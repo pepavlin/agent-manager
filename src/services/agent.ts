@@ -293,6 +293,7 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
   }
 
   // Handle tool request
+  let pendingToolCallId: string | undefined;
   if (agentResponse.mode === 'ACT' && agentResponse.tool_request) {
     const validation = validateToolRequest(agentResponse.tool_request, allTools);
     if (!validation.valid) {
@@ -342,8 +343,8 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
         // Get tool definition for defaults
         const toolDef = allTools.find((t) => t.name === agentResponse.tool_request!.name);
 
-        // Store tool call for callback (pending approval)
-        await prisma.toolCall.create({
+        // Store tool call for callback (pending)
+        const toolCall = await prisma.toolCall.create({
           data: {
             projectId: project_id,
             threadId: threadIdToUse,
@@ -354,6 +355,7 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
             status: 'pending',
           },
         });
+        pendingToolCallId = toolCall.id;
       }
     }
   }
@@ -388,6 +390,7 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
   return {
     thread_id: threadIdToUse,
     response_json: agentResponse,
+    ...(pendingToolCallId && { tool_call_id: pendingToolCallId }),
     render: {
       text_to_send_to_user: agentResponse.message,
     },

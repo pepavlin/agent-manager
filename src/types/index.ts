@@ -72,6 +72,7 @@ export type ChatRequest = z.infer<typeof ChatRequestSchema>;
 export interface ChatResponse {
   thread_id: string;
   response_json: AgentResponse;
+  tool_call_id?: string;
   render: {
     text_to_send_to_user: string;
   };
