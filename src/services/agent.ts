@@ -421,6 +421,16 @@ function parseAgentResponse(raw: string): AgentResponse {
   }
 }
 
+/**
+ * Truncate data for inclusion in LLM context to avoid token limit issues.
+ * Full data is always preserved in toolCall.resultJson and auditLog.
+ */
+function truncateForContext(data: unknown, maxChars = 2000): string {
+  const serialized = typeof data === 'string' ? data : JSON.stringify(data);
+  if (serialized.length <= maxChars) return serialized;
+  return serialized.slice(0, maxChars) + `... [truncated, ${serialized.length} chars total]`;
+}
+
 function createSafeResponse(message: string): AgentResponse {
   return {
     mode: 'ASK',
@@ -470,7 +480,7 @@ export async function processToolResult(
     },
   });
 
-  // Store tool result as message
+  // Store tool result as message (truncated to avoid blowing up LLM context)
   await prisma.message.create({
     data: {
       threadId: toolCall.threadId,
@@ -478,7 +488,7 @@ export async function processToolResult(
       content: JSON.stringify({
         tool_name: toolCall.name,
         ok,
-        data,
+        data: ok ? truncateForContext(data) : undefined,
         error,
       }),
     },
@@ -519,7 +529,7 @@ export async function processToolResult(
 
   // Automatically call processChat so the agent can respond to the tool result
   const resultSummary = ok
-    ? `Tool "${toolCall.name}" completed successfully. Result: ${JSON.stringify(data)}`
+    ? `Tool "${toolCall.name}" completed successfully. Result: ${truncateForContext(data)}`
     : `Tool "${toolCall.name}" failed. Error: ${error || 'Unknown error'}`;
 
   const chatResponse = await processChat({
