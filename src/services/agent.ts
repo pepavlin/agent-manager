@@ -439,8 +439,10 @@ export async function processToolResult(
   projectId: string,
   ok: boolean,
   data?: unknown,
-  error?: string
-): Promise<void> {
+  error?: string,
+  userId?: string,
+  tools?: ToolInput[]
+): Promise<ChatResponse> {
   logger.info({ toolCallId, projectId, ok }, 'Processing tool result');
 
   // Get tool call for context
@@ -513,7 +515,22 @@ export async function processToolResult(
     },
   });
 
-  logger.info({ toolCallId, toolName: toolCall.name, ok }, 'Tool result processed');
+  logger.info({ toolCallId, toolName: toolCall.name, ok }, 'Tool result stored, calling agent for follow-up');
+
+  // Automatically call processChat so the agent can respond to the tool result
+  const resultSummary = ok
+    ? `Tool "${toolCall.name}" completed successfully. Result: ${JSON.stringify(data)}`
+    : `Tool "${toolCall.name}" failed. Error: ${error || 'Unknown error'}`;
+
+  const chatResponse = await processChat({
+    project_id: projectId,
+    user_id: userId || toolCall.thread.userId,
+    thread_id: toolCall.threadId,
+    message: resultSummary,
+    tools: tools || [],
+  });
+
+  return chatResponse;
 }
 
 /**

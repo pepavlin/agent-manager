@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { processToolResult } from '../services/agent.js';
 import { ToolResultSchema } from '../types/index.js';
 import { createChildLogger } from '../utils/logger.js';
-import { ToolResultBody, ErrorResponse } from '../schemas/index.js';
+import { ToolResultBody, ChatResponseSchema, ErrorResponse } from '../schemas/index.js';
 import { isAppError } from '../utils/errors.js';
 
 const logger = createChildLogger('routes:tools');
@@ -19,22 +19,9 @@ export async function toolRoutes(app: FastifyInstance): Promise<void> {
 1. Agent responds with \`mode: ACT\` and a \`tool_request\`
 2. External system executes the tool
 3. External system calls this endpoint with the result
-4. Result is stored in the conversation thread for context
+4. The agent is automatically called to process the tool result and generate a follow-up response
 
----
-
-## Memory Tools Flow
-
-For memory proposal tools (\`memory.propose_add\`, \`memory.propose_update\`):
-1. Agent returns \`tool_request\` with \`name: "memory.propose_add"\`
-2. N8N shows proposal to user for approval
-3. User approves/rejects
-4. N8N calls this endpoint:
-   - Approved: \`{ ok: true, data: { memory_item_id: "..." } }\`
-   - Rejected: \`{ ok: false, error: "User rejected" }\`
-5. API stores memory item accordingly (accepted/rejected status)
-
-**Note:** Events and metrics with TTL are auto-approved and don't go through this flow.
+The response has the same format as \`POST /chat\` — the agent sees the tool result and responds accordingly. If the agent wants to call another tool, a new \`tool_call_id\` will be in the response.
 
 ---
 
@@ -43,24 +30,21 @@ For memory proposal tools (\`memory.propose_add\`, \`memory.propose_update\`):
 {
   "tool_call_id": "tc_abc123xyz",
   "project_id": "clx1234567890abcdef",
+  "user_id": "user_123",
   "ok": true,
   "data": {
     "ticket_id": "ECOM-1234",
     "ticket_url": "https://jira.example.com/browse/ECOM-1234",
     "status": "created"
-  }
-}
-\`\`\`
-
-## Example Request (Memory Proposal Approved)
-\`\`\`json
-{
-  "tool_call_id": "tc_mem123xyz",
-  "project_id": "clx1234567890abcdef",
-  "ok": true,
-  "data": {
-    "memory_item_id": "mem_abc123"
-  }
+  },
+  "tools": [
+    {
+      "name": "jira.create_ticket",
+      "description": "Create a Jira ticket",
+      "requires_approval": true,
+      "risk": "low"
+    }
+  ]
 }
 \`\`\`
 
@@ -77,19 +61,20 @@ For memory proposal tools (\`memory.propose_add\`, \`memory.propose_update\`):
 ## Example Response
 \`\`\`json
 {
-  "status": "acknowledged",
-  "tool_call_id": "tc_abc123xyz"
+  "thread_id": "thread_xyz789",
+  "response_json": {
+    "mode": "NOOP",
+    "message": "The ticket ECOM-1234 has been created successfully.",
+    "tool_request": null,
+    "memory_updates": {"preferences_add": [], "preferences_remove": [], "lessons_add": []}
+  },
+  "render": {"text_to_send_to_user": "The ticket ECOM-1234 has been created successfully."}
 }
 \`\`\``,
       body: ToolResultBody,
       response: {
-        200: {
-          type: 'object',
-          properties: {
-            status: { type: 'string', enum: ['acknowledged'] },
-            tool_call_id: { type: 'string' },
-          },
-        },
+        200: ChatResponseSchema,
+        400: ErrorResponse,
         404: ErrorResponse,
         500: ErrorResponse,
       },
@@ -103,14 +88,16 @@ For memory proposal tools (\`memory.propose_add\`, \`memory.propose_update\`):
       });
     }
 
-    const { tool_call_id, project_id, ok, data, error } = body.data;
+    const { tool_call_id, project_id, user_id, ok, data, error, tools } = body.data;
 
     try {
-      await processToolResult(tool_call_id, project_id, ok, data, error);
+      const chatResponse = await processToolResult(tool_call_id, project_id, ok, data, error, user_id, tools);
 
       return reply.send({
-        status: 'acknowledged',
-        tool_call_id,
+        thread_id: chatResponse.thread_id,
+        response_json: chatResponse.response_json,
+        ...(chatResponse.tool_call_id && { tool_call_id: chatResponse.tool_call_id }),
+        render: chatResponse.render,
       });
     } catch (err) {
       logger.error({ error: err, tool_call_id }, 'Tool result processing failed');

@@ -100,9 +100,11 @@ export type DocumentUploadRequest = z.infer<typeof DocumentUploadSchema>;
 export const ToolResultSchema = z.object({
   tool_call_id: z.string(),
   project_id: z.string(),
+  user_id: z.string().optional().default('system'),
   ok: z.boolean(),
   data: z.unknown().optional(),
   error: z.string().optional(),
+  tools: z.array(ToolInputSchema).optional().default([]),
 });
 export type ToolResultRequest = z.infer<typeof ToolResultSchema>;
 

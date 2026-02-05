@@ -56,6 +56,13 @@ vi.mock('../src/db/client.js', () => {
       findUnique: vi.fn(),
       upsert: vi.fn(),
     },
+    memoryItem: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
   };
 
   return {
@@ -407,7 +414,23 @@ describe('API Integration Tests', () => {
   });
 
   describe('Tools Result API', () => {
-    it('POST /tools/result should process tool result', async () => {
+    it('POST /tools/result should process tool result and return agent response', async () => {
+      const mockProject = {
+        id: 'test-project-id',
+        name: 'Test Project',
+        roleStatement: 'Test role statement',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const mockThread = {
+        id: 'test-thread-id',
+        projectId: 'test-project-id',
+        userId: 'test-user-id',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
       const mockToolCall = {
         id: 'tool-call-id',
         projectId: 'test-project-id',
@@ -420,17 +443,33 @@ describe('API Integration Tests', () => {
         resultJson: null,
         createdAt: new Date(),
         updatedAt: new Date(),
-        thread: {
-          id: 'test-thread-id',
-          projectId: 'test-project-id',
-          userId: 'test-user-id',
-        },
+        thread: mockThread,
       };
 
       vi.mocked(prisma.toolCall.update).mockResolvedValueOnce(mockToolCall as never);
       vi.mocked(prisma.toolCall.findUnique).mockResolvedValueOnce(mockToolCall as never);
-      vi.mocked(prisma.message.create).mockResolvedValueOnce({} as never);
-      vi.mocked(prisma.auditLog.create).mockResolvedValueOnce({} as never);
+      vi.mocked(prisma.message.create).mockResolvedValue({} as never);
+      vi.mocked(prisma.auditLog.create).mockResolvedValue({} as never);
+      vi.mocked(prisma.memoryItem.create).mockResolvedValue({
+        id: 'mi-1',
+        projectId: 'test-project-id',
+        userId: null,
+        type: 'event',
+        title: 'Tool custom.tool succeeded',
+        content: {},
+        status: 'accepted',
+        source: 'tool_result',
+        confidence: 1.0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        expiresAt: null,
+        supersedesId: null,
+        tags: [],
+        qdrantPointId: 'qp-1',
+      } as never);
+      // processToolResult now calls processChat, so need project + thread mocks
+      vi.mocked(prisma.project.findUnique).mockResolvedValueOnce(mockProject);
+      vi.mocked(prisma.thread.findUnique).mockResolvedValueOnce(mockThread);
 
       const response = await app.inject({
         method: 'POST',
@@ -449,7 +488,11 @@ describe('API Integration Tests', () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
-      expect(body.status).toBe('acknowledged');
+      // Now returns ChatResponse format instead of { status: 'acknowledged' }
+      expect(body.thread_id).toBeDefined();
+      expect(body.response_json).toBeDefined();
+      expect(body.response_json.mode).toBe('NOOP');
+      expect(body.render.text_to_send_to_user).toBeDefined();
     });
   });
 

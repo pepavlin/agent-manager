@@ -578,7 +578,7 @@ describe('Agent Service', () => {
   });
 
   describe('processToolResult', () => {
-    it('should update tool call status to completed on success', async () => {
+    it('should update tool call status to completed on success and return agent response', async () => {
       const mockToolCall = {
         id: 'tc-1',
         projectId: 'proj-1',
@@ -616,7 +616,18 @@ describe('Agent Service', () => {
         qdrantPointId: 'qp-1',
       });
 
-      await processToolResult('tc-1', 'proj-1', true, { ticket_id: 'PROJ-123' });
+      // processToolResult now calls processChat internally, so mock the LLM response
+      vi.mocked(prisma.thread.findUnique).mockResolvedValueOnce(mockThread);
+      mockGenerateJSON.mockResolvedValueOnce(
+        JSON.stringify({
+          mode: 'NOOP',
+          message: 'Ticket PROJ-123 has been created.',
+          tool_request: null,
+          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+        })
+      );
+
+      const result = await processToolResult('tc-1', 'proj-1', true, { ticket_id: 'PROJ-123' });
 
       expect(vi.mocked(prisma.toolCall.update)).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -626,9 +637,15 @@ describe('Agent Service', () => {
           }),
         })
       );
+
+      // Should return a ChatResponse from the follow-up agent call
+      expect(result.thread_id).toBe('thread-1');
+      expect(result.response_json.mode).toBe('NOOP');
+      expect(result.response_json.message).toBe('Ticket PROJ-123 has been created.');
+      expect(result.render.text_to_send_to_user).toBe('Ticket PROJ-123 has been created.');
     });
 
-    it('should update tool call status to failed on error', async () => {
+    it('should update tool call status to failed on error and return agent response', async () => {
       const mockToolCall = {
         id: 'tc-1',
         projectId: 'proj-1',
@@ -666,7 +683,18 @@ describe('Agent Service', () => {
         qdrantPointId: 'qp-1',
       });
 
-      await processToolResult('tc-1', 'proj-1', false, undefined, 'Permission denied');
+      // processToolResult now calls processChat internally
+      vi.mocked(prisma.thread.findUnique).mockResolvedValueOnce(mockThread);
+      mockGenerateJSON.mockResolvedValueOnce(
+        JSON.stringify({
+          mode: 'NOOP',
+          message: 'The ticket creation failed due to permission error.',
+          tool_request: null,
+          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+        })
+      );
+
+      const result = await processToolResult('tc-1', 'proj-1', false, undefined, 'Permission denied');
 
       expect(vi.mocked(prisma.toolCall.update)).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -675,6 +703,10 @@ describe('Agent Service', () => {
           }),
         })
       );
+
+      // Should return a ChatResponse
+      expect(result.response_json.mode).toBe('NOOP');
+      expect(result.render.text_to_send_to_user).toContain('failed');
     });
 
     it('should throw NotFoundError for missing tool call', async () => {

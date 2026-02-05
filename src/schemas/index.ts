@@ -185,11 +185,18 @@ export const ToolResultBody = {
   type: 'object',
   required: ['tool_call_id', 'project_id', 'ok'],
   properties: {
-    tool_call_id: { type: 'string' },
-    project_id: { type: 'string' },
-    ok: { type: 'boolean' },
-    data: { type: 'object', additionalProperties: true },
-    error: { type: 'string' },
+    tool_call_id: { type: 'string', description: 'ID of the tool call to report result for' },
+    project_id: { type: 'string', description: 'Project ID' },
+    user_id: { type: 'string', default: 'system', description: 'User ID (used for the follow-up agent call)' },
+    ok: { type: 'boolean', description: 'Whether the tool execution succeeded' },
+    data: { type: 'object', additionalProperties: true, description: 'Tool execution result data' },
+    error: { type: 'string', description: 'Error message if tool execution failed' },
+    tools: {
+      type: 'array',
+      items: ToolInputSchema,
+      default: [],
+      description: 'Available tools for the follow-up agent response. Pass the same tools as the original chat request.',
+    },
   },
 } as const;
 
