@@ -113,6 +113,7 @@ The agent automatically extracts user preferences and lessons from conversations
       return reply.send({
         thread_id: response.thread_id,
         response_json: response.response_json,
+        ...(response.tool_call_id && { tool_call_id: response.tool_call_id }),
         render: response.render,
       });
     } catch (error) {
