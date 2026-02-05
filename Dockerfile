@@ -3,8 +3,14 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# OpenSSL is required by Prisma on Alpine
-RUN apk add --no-cache openssl
+# OpenSSL, bash, git are required by Prisma and Claude Code on Alpine
+RUN apk add --no-cache openssl bash git
+
+# Install Claude Code CLI globally (needed in both builder and production stages)
+RUN npm install -g @anthropic-ai/claude-code
+
+# Copy entrypoint script (needed when running builder stage via dev override)
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # Copy package files
 COPY package*.json ./
