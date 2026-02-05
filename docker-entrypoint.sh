@@ -25,5 +25,10 @@ CREDENTIALS_EOF
   echo "Claude Code credentials written to $CLAUDE_DIR/.credentials.json"
 fi
 
+# Run database migrations
+echo "Running database migrations..."
+npx prisma migrate deploy
+echo "Migrations complete."
+
 # Execute the main command
 exec "$@"
