@@ -37,12 +37,7 @@ async function buildApp(): Promise<FastifyInstance> {
         description: 'Document-first Project Manager AI Agent API',
         version: '1.0.0',
       },
-      servers: [
-        {
-          url: `http://localhost:${config.port}`,
-          description: 'Development server',
-        },
-      ],
+      servers: [],
       components: {
         securitySchemes: {
           apiKey: {
@@ -62,6 +57,19 @@ async function buildApp(): Promise<FastifyInstance> {
         { name: 'Tools', description: 'Tool execution callbacks' },
       ],
     },
+    transform: ({ schema, url, ...rest }) => {
+      return { schema, url, ...rest };
+    },
+  });
+
+  // Dynamically set OpenAPI server URL from incoming request
+  app.addHook('onRequest', async (request) => {
+    if (request.url === '/docs/json' || request.url === '/docs/yaml') {
+      const proto = (request.headers['x-forwarded-proto'] as string) || request.protocol;
+      const host = request.headers['x-forwarded-host'] as string || request.hostname;
+      const spec = app.swagger() as Record<string, unknown>;
+      spec.servers = [{ url: `${proto}://${host}`, description: 'Current server' }];
+    }
   });
 
   await app.register(swaggerUi, {
