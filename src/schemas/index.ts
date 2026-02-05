@@ -136,6 +136,7 @@ export const ChatResponseSchema = {
   properties: {
     thread_id: { type: 'string' },
     response_json: AgentResponseSchema,
+    tool_call_id: { type: 'string', description: 'ID of pending tool call (only present for ACT responses with external tools). Use this to send results back via POST /tools/result.' },
     render: {
       type: 'object',
       properties: {
