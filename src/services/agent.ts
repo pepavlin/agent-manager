@@ -349,7 +349,8 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
         // Get tool definition for defaults
         const toolDef = allTools.find((t) => t.name === agentResponse.tool_request!.name);
 
-        // Store tool call for callback (pending)
+        // Store tool call for callback (pending) — include available tools
+        // so processToolResult can pass them to the follow-up agent call
         const toolCall = await prisma.toolCall.create({
           data: {
             projectId: project_id,
@@ -359,6 +360,7 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
             requiresApproval: agentResponse.tool_request.requires_approval ?? toolDef?.requires_approval ?? true,
             risk: agentResponse.tool_request.risk ?? toolDef?.risk ?? 'medium',
             status: 'pending',
+            toolsJson: JSON.stringify(tools),
           },
         });
         pendingToolCallId = toolCall.id;
@@ -533,6 +535,16 @@ export async function processToolResult(
 
   logger.info({ toolCallId, toolName: toolCall.name, ok }, 'Tool result stored, calling agent for follow-up');
 
+  // Resolve tools: prefer caller-provided, fall back to tools stored on the tool call
+  let resolvedTools = tools && tools.length > 0 ? tools : [];
+  if (resolvedTools.length === 0 && toolCall.toolsJson) {
+    try {
+      resolvedTools = JSON.parse(toolCall.toolsJson) as ToolInput[];
+    } catch {
+      logger.warn({ toolCallId }, 'Failed to parse stored toolsJson');
+    }
+  }
+
   // Automatically call processChat so the agent can respond to the tool result
   const resultSummary = ok
     ? `Tool "${toolCall.name}" completed successfully. Result: ${truncateForContext(data)}`
@@ -543,7 +555,7 @@ export async function processToolResult(
     user_id: userId || toolCall.thread.userId,
     thread_id: toolCall.threadId,
     message: resultSummary,
-    tools: tools || [],
+    tools: resolvedTools,
   });
 
   return chatResponse;

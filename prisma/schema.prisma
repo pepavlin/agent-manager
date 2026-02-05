@@ -162,6 +162,7 @@ model ToolCall {
   risk             RiskLevel
   status           ToolCallStatus @default(pending)
   resultJson       String?        @map("result_json")
+  toolsJson        String?        @map("tools_json")
   createdAt        DateTime       @default(now()) @map("created_at")
   updatedAt        DateTime       @updatedAt @map("updated_at")
 
