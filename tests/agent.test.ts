@@ -354,7 +354,7 @@ describe('Agent Service', () => {
       expect(result.response_json.message).toContain('issue');
     });
 
-    it('should auto-approve memory event tools', async () => {
+    it('should auto-approve memory event tools and return auto_executed fields', async () => {
       vi.mocked(prisma.memoryItem.create).mockResolvedValue({
         id: 'mi-1',
         projectId: 'proj-1',
@@ -372,6 +372,21 @@ describe('Agent Service', () => {
         tags: [],
         qdrantPointId: 'qp-1',
       });
+
+      vi.mocked(prisma.toolCall.create).mockResolvedValueOnce({
+        id: 'tc-auto-1',
+        projectId: 'proj-1',
+        threadId: 'thread-1',
+        name: 'memory.propose_add',
+        argsJson: '{}',
+        requiresApproval: false,
+        risk: 'low',
+        status: 'completed',
+        resultJson: null,
+        toolsJson: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as never);
 
       mockGenerateJSON.mockResolvedValueOnce(
         JSON.stringify({
@@ -398,22 +413,28 @@ describe('Agent Service', () => {
         tools: [],
       });
 
-      expect(result.response_json.mode).toBe('ACT');
       // Tool call should be created with status completed (auto-approved)
       const toolCallArg = vi.mocked(prisma.toolCall.create).mock.calls[0][0];
       expect(toolCallArg.data.status).toBe('completed');
       expect(toolCallArg.data.requiresApproval).toBe(false);
+
+      // Response must include auto-executed fields so n8n can drive the loop
+      expect(result.tool_call_id).toBe('tc-auto-1');
+      expect(result.tool_auto_executed).toBe(true);
+      expect(result.tool_result).toBeDefined();
+      expect(result.tool_result!.ok).toBe(true);
+      expect(result.tool_result!.data).toEqual({ memory_item_id: 'mi-1', status: 'accepted' });
     });
 
-    it('should NOT auto-approve memory fact tools', async () => {
+    it('should auto-approve memory fact tools and return auto_executed fields', async () => {
       vi.mocked(prisma.memoryItem.create).mockResolvedValue({
-        id: 'mi-1',
+        id: 'mi-2',
         projectId: 'proj-1',
         userId: 'user-1',
         type: 'fact',
         title: 'Budget is 50k',
         content: { budget: 50000 },
-        status: 'proposed',
+        status: 'accepted',
         source: 'user_chat',
         confidence: 0.5,
         createdAt: new Date(),
@@ -423,6 +444,21 @@ describe('Agent Service', () => {
         tags: [],
         qdrantPointId: 'qp-1',
       });
+
+      vi.mocked(prisma.toolCall.create).mockResolvedValueOnce({
+        id: 'tc-auto-2',
+        projectId: 'proj-1',
+        threadId: 'thread-1',
+        name: 'memory.propose_add',
+        argsJson: '{}',
+        requiresApproval: false,
+        risk: 'low',
+        status: 'completed',
+        resultJson: null,
+        toolsJson: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as never);
 
       mockGenerateJSON.mockResolvedValueOnce(
         JSON.stringify({
@@ -449,15 +485,20 @@ describe('Agent Service', () => {
         tools: [],
       });
 
-      expect(result.response_json.mode).toBe('ACT');
-      // All memory tools are now auto-approved
+      // All memory tools are auto-approved
       const toolCallArg = vi.mocked(prisma.toolCall.create).mock.calls[0][0];
       expect(toolCallArg.data.status).toBe('completed');
+
+      // Must return auto-executed fields
+      expect(result.tool_call_id).toBe('tc-auto-2');
+      expect(result.tool_auto_executed).toBe(true);
+      expect(result.tool_result).toBeDefined();
+      expect(result.tool_result!.ok).toBe(true);
     });
 
-    it('should auto-approve memory metric with TTL', async () => {
+    it('should auto-approve memory metric with TTL and return auto_executed fields', async () => {
       vi.mocked(prisma.memoryItem.create).mockResolvedValue({
-        id: 'mi-1',
+        id: 'mi-3',
         projectId: 'proj-1',
         userId: 'user-1',
         type: 'metric',
@@ -473,6 +514,21 @@ describe('Agent Service', () => {
         tags: [],
         qdrantPointId: 'qp-1',
       });
+
+      vi.mocked(prisma.toolCall.create).mockResolvedValueOnce({
+        id: 'tc-auto-3',
+        projectId: 'proj-1',
+        threadId: 'thread-1',
+        name: 'memory.propose_add',
+        argsJson: '{}',
+        requiresApproval: false,
+        risk: 'low',
+        status: 'completed',
+        resultJson: null,
+        toolsJson: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as never);
 
       mockGenerateJSON.mockResolvedValueOnce(
         JSON.stringify({
@@ -500,9 +556,68 @@ describe('Agent Service', () => {
         tools: [],
       });
 
-      expect(result.response_json.mode).toBe('ACT');
       const toolCallArg = vi.mocked(prisma.toolCall.create).mock.calls[0][0];
       expect(toolCallArg.data.status).toBe('completed');
+
+      // Must return auto-executed fields
+      expect(result.tool_call_id).toBe('tc-auto-3');
+      expect(result.tool_auto_executed).toBe(true);
+      expect(result.tool_result).toBeDefined();
+      expect(result.tool_result!.ok).toBe(true);
+    });
+
+    it('should NOT set tool_auto_executed for custom (non-memory) tools', async () => {
+      vi.mocked(prisma.toolCall.create).mockResolvedValueOnce({
+        id: 'tc-custom-1',
+        projectId: 'proj-1',
+        threadId: 'thread-1',
+        name: 'jira.create',
+        argsJson: '{}',
+        requiresApproval: true,
+        risk: 'medium',
+        status: 'pending',
+        resultJson: null,
+        toolsJson: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as never);
+
+      mockGenerateJSON.mockResolvedValueOnce(
+        JSON.stringify({
+          mode: 'ACT',
+          message: 'Creating ticket',
+          tool_request: {
+            name: 'jira.create',
+            args: { summary: 'Bug fix' },
+            requires_approval: true,
+            risk: 'medium',
+          },
+          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+        })
+      );
+
+      const result = await processChat({
+        project_id: 'proj-1',
+        user_id: 'user-1',
+        message: 'Create a ticket',
+        tools: [
+          {
+            name: 'jira.create',
+            description: 'Create Jira ticket',
+            parameters: { summary: { type: 'string', required: true } },
+            requires_approval: true,
+            risk: 'medium',
+          },
+        ],
+      });
+
+      // Custom tool: pending for n8n, NOT auto-executed
+      expect(result.tool_call_id).toBe('tc-custom-1');
+      expect(result.tool_auto_executed).toBeUndefined();
+      expect(result.tool_result).toBeUndefined();
+
+      const toolCallArg = vi.mocked(prisma.toolCall.create).mock.calls[0][0];
+      expect(toolCallArg.data.status).toBe('pending');
     });
 
     it('should include memory tools automatically', async () => {
