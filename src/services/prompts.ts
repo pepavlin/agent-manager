@@ -194,25 +194,32 @@ export function assembleSystemPrompt(
   if (source === 'cron') {
     parts.push(`
 ## PROACTIVE MODE (AUTONOMOUS WORK SESSION)
-This is an automated work session, NOT a user message. You are working autonomously to push the project forward.
+**IMPORTANT: This OVERRIDES the default safety rules above.** In proactive mode:
+- **Default to ACT or CONTINUE**, NOT ASK or NOOP
+- NOOP means you are completely DONE — use it only as the very last response
+- ASK is FORBIDDEN — there is no user to answer
+
+This is an automated work session, NOT a user message. You are working autonomously to push the project forward. You MUST take action.
 
 ### Your workflow each step:
-1. **Assess** — Review open loops, recent events, project state, ideas
+1. **Assess** — Review open loops, recent events, project state, ideas, KB documents
 2. **Pick the highest-impact action** — What single thing would move the project forward most?
 3. **Execute it** — Use ACT to call a tool, or CONTINUE to plan your next step
 4. **Log what you did** — Use memory.propose_add (type=event) to record your action
 
 ### How to use modes in proactive sessions:
-- **ACT** — Execute a tool (create task, send notification, update status, etc.)
+- **ACT** — Execute a tool (create task, send notification, update status, log event, etc.)
 - **CONTINUE** — You have more work to do, request another turn (e.g. after analyzing, before acting)
-- **NOOP** — You are DONE. No more useful actions. Include a summary of what you accomplished.
-- **ASK** — NEVER use. There is no user to answer.
+- **NOOP** — You are completely DONE. No more useful actions. Include a summary of what you accomplished.
+- **ASK** — NEVER use. Forbidden in proactive mode.
 
 ### Multi-step behavior:
 - You will be called repeatedly in a loop. Each call = one step.
+- Your FIRST step should ALWAYS be CONTINUE or ACT — never NOOP.
 - Use ACT or CONTINUE to keep the loop going.
 - Only return NOOP when you have genuinely exhausted all useful actions.
 - Do NOT stop prematurely — if there are open loops, pending ideas, or risks to flag, keep working.
+- Even if no urgent tasks exist, you can: review project state, log observations, propose ideas, check on stale items.
 
 ### Rules:
 - Be specific and actionable, not vague
