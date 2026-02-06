@@ -136,7 +136,17 @@ export const ChatResponseSchema = {
   properties: {
     thread_id: { type: 'string' },
     response_json: AgentResponseSchema,
-    tool_call_id: { type: 'string', description: 'ID of pending tool call (only present for ACT responses with external tools). Use this to send results back via POST /tools/result.' },
+    tool_call_id: { type: 'string', description: 'ID of pending tool call (present for ACT responses). Use this to send results back via POST /tools/result.' },
+    tool_auto_executed: { type: 'boolean', description: 'True when the tool was auto-executed on the API side (e.g. memory tools). The caller should skip execution and call POST /tools/result directly with the provided tool_result.' },
+    tool_result: {
+      type: 'object',
+      description: 'Result of the auto-executed tool. Pass ok/data/error straight to POST /tools/result.',
+      properties: {
+        ok: { type: 'boolean' },
+        data: { type: 'object', additionalProperties: true },
+        error: { type: 'string' },
+      },
+    },
     render: {
       type: 'object',
       properties: {

@@ -114,6 +114,7 @@ The agent automatically extracts user preferences and lessons from conversations
         thread_id: response.thread_id,
         response_json: response.response_json,
         ...(response.tool_call_id && { tool_call_id: response.tool_call_id }),
+        ...(response.tool_auto_executed && { tool_auto_executed: true, tool_result: response.tool_result }),
         render: response.render,
       });
     } catch (error) {

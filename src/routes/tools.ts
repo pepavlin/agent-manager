@@ -97,6 +97,7 @@ The response has the same format as \`POST /chat\` — the agent sees the tool r
         thread_id: chatResponse.thread_id,
         response_json: chatResponse.response_json,
         ...(chatResponse.tool_call_id && { tool_call_id: chatResponse.tool_call_id }),
+        ...(chatResponse.tool_auto_executed && { tool_auto_executed: true, tool_result: chatResponse.tool_result }),
         render: chatResponse.render,
       });
     } catch (err) {
