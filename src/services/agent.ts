@@ -345,6 +345,11 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
             }),
           },
         });
+
+        // Memory tool was handled internally — convert response to NOOP
+        // so the client/n8n does not see a pending ACT for a memory tool
+        agentResponse.mode = 'NOOP';
+        agentResponse.tool_request = null;
       } else {
         // Get tool definition for defaults
         const toolDef = allTools.find((t) => t.name === agentResponse.tool_request!.name);
