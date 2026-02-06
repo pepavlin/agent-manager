@@ -178,9 +178,31 @@ export function assembleSystemPrompt(
   projectName: string,
   roleStatement: string,
   context: RetrievedContext,
-  tools: ToolInput[]
+  tools: ToolInput[],
+  source?: string
 ): string {
   const parts: string[] = [BASE_SYSTEM_PROMPT];
+
+  // Proactive mode for cron-triggered reviews
+  if (source === 'cron') {
+    parts.push(`
+## PROACTIVE MODE (SCHEDULED REVIEW)
+This is an automated scheduled check, NOT a user message. Your job is to:
+
+1. **Review open loops** — Are there pending commitments? What's overdue or stuck?
+2. **Assess project state** — What changed recently? Any blockers or risks?
+3. **Propose next steps** — What concrete actions should be taken to move the project forward?
+4. **Surface ideas** — Are there accepted ideas worth acting on?
+5. **Flag risks** — Any deadlines approaching, decisions needed, or dependencies at risk?
+
+Guidelines for proactive mode:
+- Prefer ACT mode — use tools to create tasks, send notifications, update statuses
+- If no action is needed, use NOOP with a concise status summary
+- Do NOT ask questions (no ASK mode) — this is unattended, there is no user to answer
+- Be specific and actionable, not vague
+- Focus on what matters most RIGHT NOW
+- Log important observations as events via memory.propose_add`);
+  }
 
   // Project overlay
   parts.push(`

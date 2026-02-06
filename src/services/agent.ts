@@ -274,7 +274,7 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
   const ragContext = await retrieveContext(project_id, user_id, message, threadIdToUse);
 
   // Assemble prompts with all tools (including memory tools)
-  const systemPrompt = assembleSystemPrompt(project.name, project.roleStatement, ragContext, allTools);
+  const systemPrompt = assembleSystemPrompt(project.name, project.roleStatement, ragContext, allTools, requestContext?.source);
   const userPrompt = assembleUserPrompt(message, ragContext);
 
   // Generate response
@@ -330,7 +330,7 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
             risk: 'low',
             status: result.ok ? 'completed' : 'failed',
             resultJson: JSON.stringify(result),
-            toolsJson: JSON.stringify(tools),
+            toolsJson: JSON.stringify({ tools, source: requestContext?.source }),
           },
         });
 
@@ -366,7 +366,7 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
             requiresApproval: agentResponse.tool_request.requires_approval ?? toolDef?.requires_approval ?? true,
             risk: agentResponse.tool_request.risk ?? toolDef?.risk ?? 'medium',
             status: 'pending',
-            toolsJson: JSON.stringify(tools),
+            toolsJson: JSON.stringify({ tools, source: requestContext?.source }),
           },
         });
         pendingToolCallId = toolCall.id;
@@ -542,11 +542,19 @@ export async function processToolResult(
 
   logger.info({ toolCallId, toolName: toolCall.name, ok }, 'Tool result stored, calling agent for follow-up');
 
-  // Resolve tools: prefer caller-provided, fall back to tools stored on the tool call
+  // Resolve tools and source: prefer caller-provided, fall back to stored on the tool call
   let resolvedTools = tools && tools.length > 0 ? tools : [];
-  if (resolvedTools.length === 0 && toolCall.toolsJson) {
+  let resolvedSource: string | undefined;
+  if (toolCall.toolsJson) {
     try {
-      resolvedTools = JSON.parse(toolCall.toolsJson) as ToolInput[];
+      const stored = JSON.parse(toolCall.toolsJson);
+      // Support both new format { tools, source } and legacy array format
+      if (Array.isArray(stored)) {
+        if (resolvedTools.length === 0) resolvedTools = stored as ToolInput[];
+      } else {
+        if (resolvedTools.length === 0 && stored.tools) resolvedTools = stored.tools as ToolInput[];
+        resolvedSource = stored.source;
+      }
     } catch {
       logger.warn({ toolCallId }, 'Failed to parse stored toolsJson');
     }
@@ -563,6 +571,7 @@ export async function processToolResult(
     thread_id: toolCall.threadId,
     message: resultSummary,
     tools: resolvedTools,
+    ...(resolvedSource && { context: { source: resolvedSource } }),
   });
 
   return chatResponse;
