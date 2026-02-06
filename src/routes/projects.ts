@@ -77,6 +77,12 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
 
   // POST /projects/:id/docs - Upload document
   app.post('/projects/:id/docs', {
+    // Skip body validation for multipart — @fastify/multipart parses it, not Fastify's JSON validator
+    validatorCompiler: ({ httpPart }) => {
+      if (httpPart === 'body') return () => true;
+      // Fall through to default for params/querystring/headers
+      return app.validatorCompiler!({ schema: {} as never, method: '', url: '', httpPart });
+    },
     schema: {
       tags: ['Documents'],
       summary: 'Upload a document',
