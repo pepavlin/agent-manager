@@ -112,6 +112,14 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
         },
         required: ['id'],
       },
+      body: {
+        type: 'object',
+        required: ['file', 'category'],
+        properties: {
+          file: { type: 'string', format: 'binary', description: 'Document file (text/plain, text/markdown, application/pdf)' },
+          category: { type: 'string', enum: ['FACTS', 'RULES', 'STATE'], description: 'Document category' },
+        },
+      },
       response: {
         201: DocumentSchema,
         400: ErrorResponse,
