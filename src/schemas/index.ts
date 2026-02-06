@@ -108,7 +108,7 @@ export const ChatRequestBody = {
 export const AgentResponseSchema = {
   type: 'object',
   properties: {
-    mode: { type: 'string', enum: ['ACT', 'ASK', 'NOOP'] },
+    mode: { type: 'string', enum: ['ACT', 'ASK', 'NOOP', 'CONTINUE'] },
     message: { type: 'string' },
     tool_request: {
       type: 'object',

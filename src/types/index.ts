@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Agent response modes
-export const AgentModeSchema = z.enum(['ACT', 'ASK', 'NOOP']);
+export const AgentModeSchema = z.enum(['ACT', 'ASK', 'NOOP', 'CONTINUE']);
 export type AgentMode = z.infer<typeof AgentModeSchema>;
 
 // Risk levels for tool calls
