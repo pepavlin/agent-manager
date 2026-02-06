@@ -73,6 +73,10 @@ export interface ChatResponse {
   thread_id: string;
   response_json: AgentResponse;
   tool_call_id?: string;
+  /** true when the tool was auto-executed on API side (e.g. memory tools) */
+  tool_auto_executed?: boolean;
+  /** Result of the auto-executed tool — caller can pass it straight to POST /tools/result */
+  tool_result?: { ok: boolean; data?: unknown; error?: string };
   render: {
     text_to_send_to_user: string;
   };

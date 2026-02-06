@@ -300,6 +300,7 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
 
   // Handle tool request
   let pendingToolCallId: string | undefined;
+  let autoExecutedResult: { ok: boolean; data?: unknown; error?: string } | undefined;
   if (agentResponse.mode === 'ACT' && agentResponse.tool_request) {
     const validation = validateToolRequest(agentResponse.tool_request, allTools);
     if (!validation.valid) {
@@ -318,8 +319,8 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
         logger.debug({ tool: agentResponse.tool_request.name }, 'Auto-approving memory tool');
         const result = await executeMemoryTool(project_id, user_id, agentResponse.tool_request);
 
-        // Store tool call as completed
-        await prisma.toolCall.create({
+        // Store tool call as completed — include available tools for the follow-up loop
+        const toolCall = await prisma.toolCall.create({
           data: {
             projectId: project_id,
             threadId: threadIdToUse,
@@ -329,6 +330,7 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
             risk: 'low',
             status: result.ok ? 'completed' : 'failed',
             resultJson: JSON.stringify(result),
+            toolsJson: JSON.stringify(tools),
           },
         });
 
@@ -346,10 +348,9 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
           },
         });
 
-        // Memory tool was handled internally — convert response to NOOP
-        // so the client/n8n does not see a pending ACT for a memory tool
-        agentResponse.mode = 'NOOP';
-        agentResponse.tool_request = null;
+        // Return tool_call_id so n8n can drive the loop via POST /tools/result
+        pendingToolCallId = toolCall.id;
+        autoExecutedResult = result;
       } else {
         // Get tool definition for defaults
         const toolDef = allTools.find((t) => t.name === agentResponse.tool_request!.name);
@@ -404,6 +405,7 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
     thread_id: threadIdToUse,
     response_json: agentResponse,
     ...(pendingToolCallId && { tool_call_id: pendingToolCallId }),
+    ...(autoExecutedResult && { tool_auto_executed: true, tool_result: autoExecutedResult }),
     render: {
       text_to_send_to_user: agentResponse.message,
     },
