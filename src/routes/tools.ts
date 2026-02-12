@@ -65,8 +65,7 @@ The response has the same format as \`POST /chat\` — the agent sees the tool r
   "response_json": {
     "mode": "NOOP",
     "message": "The ticket ECOM-1234 has been created successfully.",
-    "tool_request": null,
-    "memory_updates": {"preferences_add": [], "preferences_remove": [], "lessons_add": []}
+    "tool_request": null
   },
   "render": {"text_to_send_to_user": "The ticket ECOM-1234 has been created successfully."}
 }

@@ -150,7 +150,7 @@ describe('Agent Service', () => {
           mode: 'NOOP',
           message: 'Hello! How can I help?',
           tool_request: null,
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -172,7 +172,7 @@ describe('Agent Service', () => {
           mode: 'ASK',
           message: 'What project do you mean?',
           tool_request: null,
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -197,7 +197,7 @@ describe('Agent Service', () => {
             requires_approval: true,
             risk: 'medium',
           },
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -231,7 +231,7 @@ describe('Agent Service', () => {
             requires_approval: true,
             risk: 'low',
           },
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -258,7 +258,7 @@ describe('Agent Service', () => {
             requires_approval: true,
             risk: 'medium',
           },
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -300,7 +300,7 @@ describe('Agent Service', () => {
           mode: 'NOOP',
           message: 'Hi',
           tool_request: null,
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -322,7 +322,7 @@ describe('Agent Service', () => {
           mode: 'NOOP',
           message: 'Hi',
           tool_request: null,
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -402,7 +402,7 @@ describe('Agent Service', () => {
             requires_approval: true,
             risk: 'low',
           },
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -474,7 +474,7 @@ describe('Agent Service', () => {
             requires_approval: true,
             risk: 'low',
           },
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -545,7 +545,7 @@ describe('Agent Service', () => {
             requires_approval: true,
             risk: 'low',
           },
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -592,7 +592,7 @@ describe('Agent Service', () => {
             requires_approval: true,
             risk: 'medium',
           },
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -626,7 +626,7 @@ describe('Agent Service', () => {
           mode: 'NOOP',
           message: 'Hi',
           tool_request: null,
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -649,7 +649,7 @@ describe('Agent Service', () => {
           mode: 'NOOP',
           message: 'Hi',
           tool_request: null,
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -677,7 +677,7 @@ describe('Agent Service', () => {
           mode: 'NOOP',
           message: 'The answer is 42',
           tool_request: null,
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -738,7 +738,7 @@ describe('Agent Service', () => {
           mode: 'NOOP',
           message: 'Ticket PROJ-123 has been created.',
           tool_request: null,
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 
@@ -805,7 +805,7 @@ describe('Agent Service', () => {
           mode: 'NOOP',
           message: 'The ticket creation failed due to permission error.',
           tool_request: null,
-          memory_updates: { preferences_add: [], preferences_remove: [], lessons_add: [] },
+
         })
       );
 

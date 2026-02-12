@@ -1,5 +1,10 @@
 import { prisma } from '../db/client.js';
-import { MemoryUpdates } from '../types/index.js';
+/** Legacy memory updates format (kept for backward compat) */
+interface MemoryUpdates {
+  preferences_add?: string[];
+  preferences_remove?: string[];
+  lessons_add?: string[];
+}
 import { createChildLogger } from '../utils/logger.js';
 import { createMemoryItem } from './memory-items.js';
 

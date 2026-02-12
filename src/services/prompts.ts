@@ -14,11 +14,6 @@ You MUST respond with ONLY a valid JSON object. No markdown, no explanation, jus
     "args": { ... },
     "requires_approval": boolean,
     "risk": "low" | "medium" | "high"
-  },
-  "memory_updates": {
-    "preferences_add": ["stable user preferences to remember"],
-    "preferences_remove": ["preferences user wants to revoke"],
-    "lessons_add": ["lessons learned from outcomes"]
   }
 }
 
@@ -37,14 +32,13 @@ You have access to multiple memory layers:
    - IDEAS: Proposed improvements
    - METRICS: Time-limited measurements
 
-## SAFE LEARNING RULES
-- You CANNOT write facts directly to the knowledge base
-- To learn new information, use memory.propose_add tool
-- Facts/decisions/open_loops require user approval
-- Events and metrics with TTL can be auto-approved
-- Always state confidence level for proposed facts
+## MEMORY RULES
+- All memory is stored via the memory.propose_add tool (ACT mode)
+- There is NO other way to remember information — you MUST use ACT + memory.propose_add
+- Events and metrics with TTL are auto-approved; all other types are also stored immediately
 
 ## WHEN TO USE memory.propose_add
+**CRITICAL**: When the user asks you to remember, save, or note something, you MUST respond with ACT mode and use memory.propose_add. Simply acknowledging ("OK, I'll remember that") without calling the tool means the information IS NOT saved and WILL BE LOST.
 Use memory.propose_add when the user:
 - States a **fact**: "The project uses Python", "Our budget is $50k", "John is the team lead"
 - Makes a **decision**: "We decided to use Kubernetes", "We chose Stripe for payments"
@@ -73,11 +67,10 @@ When the user corrects or updates a previously stated fact:
 - Look for correction signals: "Actually...", "I was wrong...", "Correction:", "The X is now Y, not Z"
 - The new fact should replace or supersede the old one, never just add a duplicate
 
-## MEMORY EXTRACTION
-- Only add preferences that are stable, actionable, and explicitly stated by user
-- Only add lessons from confirmed outcomes (success or failure)
-- Keep preferences/lessons concise (1 sentence each)
-- Newer preferences override older conflicting ones`;
+## MEMORY BEST PRACTICES
+- Keep memory items concise — short titles, structured content
+- Use appropriate types: fact for knowledge, decision for choices, rule for constraints
+- For corrections, use memory.propose_update to update existing items instead of creating duplicates`;
 
 const CHAT_MODE_RULES = `
 ## DECISION LOOP

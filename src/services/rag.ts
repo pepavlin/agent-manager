@@ -226,7 +226,7 @@ export async function retrieveMemoryContext(
 
     // Semantic search for relevant memory items
     searchMemoryItems(projectId, query, relevantMemoryLimit, {
-      types: ['fact', 'decision', 'lesson', 'preference'],
+      types: ['fact', 'rule', 'decision', 'lesson', 'preference'],
       excludeExpired: true,
     }).catch((err) => {
       logger.warn({ err }, 'Failed to search memory items');

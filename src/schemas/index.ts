@@ -120,14 +120,6 @@ export const AgentResponseSchema = {
         risk: { type: 'string', enum: ['low', 'medium', 'high'] },
       },
     },
-    memory_updates: {
-      type: 'object',
-      properties: {
-        preferences_add: { type: 'array', items: { type: 'string' } },
-        preferences_remove: { type: 'array', items: { type: 'string' } },
-        lessons_add: { type: 'array', items: { type: 'string' } },
-      },
-    },
   },
 } as const;
 

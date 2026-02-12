@@ -1,7 +1,6 @@
 import { prisma } from '../db/client.js';
 import { getChatProvider } from '../providers/chat/index.js';
 import { retrieveContext } from './rag.js';
-import { applyMemoryUpdates } from './memory.js';
 import { assembleSystemPrompt, assembleUserPrompt } from './prompts.js';
 import {
   AgentResponse,
@@ -296,11 +295,6 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
   // Parse and validate response (gracefully falls back to ASK on bad/empty input)
   const agentResponse = parseAgentResponse(rawResponse);
 
-  // Apply memory updates
-  if (agentResponse.memory_updates) {
-    await applyMemoryUpdates(project_id, user_id, agentResponse.memory_updates);
-  }
-
   // Handle tool request
   let pendingToolCallId: string | undefined;
   let autoExecutedResult: { ok: boolean; data?: unknown; error?: string } | undefined;
@@ -492,11 +486,6 @@ function createSafeResponse(message: string): AgentResponse {
     mode: 'ASK',
     message,
     tool_request: null,
-    memory_updates: {
-      preferences_add: [],
-      preferences_remove: [],
-      lessons_add: [],
-    },
   };
 }
 

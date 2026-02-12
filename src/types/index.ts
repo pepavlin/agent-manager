@@ -31,24 +31,11 @@ export const ToolRequestSchema = z.object({
 });
 export type ToolRequest = z.infer<typeof ToolRequestSchema>;
 
-// Memory updates schema
-export const MemoryUpdatesSchema = z.object({
-  preferences_add: z.array(z.string()).optional().default([]),
-  preferences_remove: z.array(z.string()).optional().default([]),
-  lessons_add: z.array(z.string()).optional().default([]),
-});
-export type MemoryUpdates = z.infer<typeof MemoryUpdatesSchema>;
-
 // Agent response schema (model output)
 export const AgentResponseSchema = z.object({
   mode: AgentModeSchema,
   message: z.string(),
   tool_request: ToolRequestSchema.nullable().optional(),
-  memory_updates: MemoryUpdatesSchema.optional().default({
-    preferences_add: [],
-    preferences_remove: [],
-    lessons_add: [],
-  }),
 });
 export type AgentResponse = z.infer<typeof AgentResponseSchema>;
 

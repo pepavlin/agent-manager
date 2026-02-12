@@ -99,11 +99,6 @@ vi.mock('../src/providers/chat/index.js', () => ({
         mode: 'NOOP',
         message: 'This is a test response.',
         tool_request: null,
-        memory_updates: {
-          preferences_add: [],
-          preferences_remove: [],
-          lessons_add: [],
-        },
       })
     ),
   })),

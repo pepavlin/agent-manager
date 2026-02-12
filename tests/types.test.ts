@@ -4,7 +4,6 @@ import {
   RiskLevelSchema,
   ToolInputSchema,
   ToolRequestSchema,
-  MemoryUpdatesSchema,
   AgentResponseSchema,
   ChatRequestSchema,
   CreateProjectSchema,
@@ -107,37 +106,12 @@ describe('Zod Schema Validation', () => {
     });
   });
 
-  describe('MemoryUpdatesSchema', () => {
-    it('should accept full updates', () => {
-      const result = MemoryUpdatesSchema.parse({
-        preferences_add: ['Use tabs'],
-        preferences_remove: ['Use spaces'],
-        lessons_add: ['Tests are important'],
-      });
-      expect(result.preferences_add).toEqual(['Use tabs']);
-      expect(result.preferences_remove).toEqual(['Use spaces']);
-      expect(result.lessons_add).toEqual(['Tests are important']);
-    });
-
-    it('should apply defaults for missing fields', () => {
-      const result = MemoryUpdatesSchema.parse({});
-      expect(result.preferences_add).toEqual([]);
-      expect(result.preferences_remove).toEqual([]);
-      expect(result.lessons_add).toEqual([]);
-    });
-  });
-
   describe('AgentResponseSchema', () => {
     it('should accept NOOP response', () => {
       const result = AgentResponseSchema.parse({
         mode: 'NOOP',
         message: 'Hello',
         tool_request: null,
-        memory_updates: {
-          preferences_add: [],
-          preferences_remove: [],
-          lessons_add: [],
-        },
       });
       expect(result.mode).toBe('NOOP');
       expect(result.tool_request).toBeNull();
@@ -164,15 +138,23 @@ describe('Zod Schema Validation', () => {
         message: 'What project?',
       });
       expect(result.mode).toBe('ASK');
-      expect(result.memory_updates).toBeDefined();
     });
 
-    it('should apply default memory_updates', () => {
+    it('should not have memory_updates field', () => {
       const result = AgentResponseSchema.parse({
         mode: 'NOOP',
         message: 'test',
       });
-      expect(result.memory_updates.preferences_add).toEqual([]);
+      expect(result).not.toHaveProperty('memory_updates');
+    });
+
+    it('should silently strip memory_updates if LLM still generates it', () => {
+      const result = AgentResponseSchema.parse({
+        mode: 'NOOP',
+        message: 'test',
+        memory_updates: { preferences_add: ['foo'] },
+      });
+      expect(result).not.toHaveProperty('memory_updates');
     });
 
     it('should reject missing message', () => {

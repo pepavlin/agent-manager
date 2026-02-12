@@ -24,7 +24,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
 Pass available tools in the \`tools\` array. Each project/request can have different tools.
 
 **Memory:**
-The agent automatically extracts user preferences and lessons from conversations.
+The agent stores memory via the memory.propose_add tool (facts, decisions, events, etc.).
 
 ---
 
@@ -65,8 +65,7 @@ The agent automatically extracts user preferences and lessons from conversations
   "response_json": {
     "mode": "NOOP",
     "message": "The sprint ends Friday with 3 tasks remaining.",
-    "tool_request": null,
-    "memory_updates": {"preferences_add": [], "preferences_remove": [], "lessons_add": []}
+    "tool_request": null
   },
   "render": {"text_to_send_to_user": "The sprint ends Friday with 3 tasks remaining."}
 }
@@ -84,8 +83,7 @@ The agent automatically extracts user preferences and lessons from conversations
       "args": {"summary": "Login bug on mobile", "project": "ECOM"},
       "requires_approval": true,
       "risk": "low"
-    },
-    "memory_updates": {"preferences_add": [], "preferences_remove": [], "lessons_add": []}
+    }
   },
   "render": {"text_to_send_to_user": "I'll create a Jira ticket for the login bug."}
 }

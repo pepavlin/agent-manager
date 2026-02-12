@@ -112,6 +112,25 @@ describe('Prompt Assembly', () => {
       expect(prompt).not.toContain('PROJECT BRIEF');
       expect(prompt).not.toContain('PROJECT RULES (PLAYBOOK)');
     });
+
+    it('should NOT include memory_updates in response schema', () => {
+      const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), []);
+      expect(prompt).not.toContain('memory_updates');
+      expect(prompt).not.toContain('preferences_add');
+      expect(prompt).not.toContain('preferences_remove');
+      expect(prompt).not.toContain('lessons_add');
+    });
+
+    it('should include mandatory memory.propose_add instruction for remember requests', () => {
+      const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), []);
+      expect(prompt).toContain('MUST respond with ACT mode and use memory.propose_add');
+      expect(prompt).toContain('WILL BE LOST');
+    });
+
+    it('should state memory.propose_add is the only way to store memory', () => {
+      const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), []);
+      expect(prompt).toContain('There is NO other way to remember information');
+    });
   });
 
   describe('assembleUserPrompt', () => {
