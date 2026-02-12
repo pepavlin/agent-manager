@@ -9,6 +9,7 @@ import { logger, createChildLogger } from './utils/logger.js';
 import { prisma, connectDatabase, disconnectDatabase } from './db/client.js';
 import { registerRoutes } from './routes/index.js';
 import { isAppError } from './utils/errors.js';
+import { initMcpClients, shutdownMcpClients } from './services/mcp-client.js';
 
 const serverLogger = createChildLogger('server');
 
@@ -175,6 +176,9 @@ async function start(): Promise<void> {
     // Connect to database
     await connectDatabase();
 
+    // Initialize MCP clients (non-fatal on failure)
+    await initMcpClients();
+
     // Build and start app
     const app = await buildApp();
 
@@ -190,6 +194,7 @@ async function start(): Promise<void> {
     for (const signal of signals) {
       process.on(signal, async () => {
         logger.info({ signal }, 'Shutting down');
+        await shutdownMcpClients();
         await app.close();
         await disconnectDatabase();
         process.exit(0);

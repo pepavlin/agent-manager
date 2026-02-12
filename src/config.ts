@@ -51,6 +51,9 @@ const configSchema = z.object({
   rateLimitMax: z.coerce.number().default(100),
   rateLimitWindowMs: z.coerce.number().default(60000),
 
+  // MCP
+  mcpConfigPath: z.string().optional(),
+
   // Logging
   logLevel: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
 });
@@ -80,6 +83,7 @@ function loadConfig(): z.infer<typeof configSchema> {
     maxUploadSizeMb: process.env.MAX_UPLOAD_SIZE_MB,
     rateLimitMax: process.env.RATE_LIMIT_MAX,
     rateLimitWindowMs: process.env.RATE_LIMIT_WINDOW_MS,
+    mcpConfigPath: process.env.MCP_CONFIG_PATH,
     logLevel: process.env.LOG_LEVEL,
   };
 

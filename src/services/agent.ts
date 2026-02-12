@@ -24,6 +24,7 @@ import {
   acceptProposal,
   rejectProposal,
 } from './memory-items.js';
+import { getMcpClientManager, isMcpTool } from './mcp-client.js';
 
 const logger = createChildLogger('agent');
 
@@ -218,8 +219,10 @@ function validateToolRequest(
 export async function processChat(request: ChatRequest): Promise<ChatResponse> {
   const { project_id, user_id, thread_id, message, tools, context: requestContext } = request;
 
-  // Merge user-provided tools with built-in memory tools
-  const allTools = [...tools, ...MEMORY_TOOLS];
+  // Merge user-provided tools with built-in memory tools and MCP tools
+  const mcpManager = getMcpClientManager();
+  const mcpTools = mcpManager ? mcpManager.getTools() : [];
+  const allTools = [...tools, ...MEMORY_TOOLS, ...mcpTools];
 
   logger.info({ project_id, user_id, thread_id, messageLength: message.length, toolsCount: allTools.length }, 'Processing chat');
 
@@ -310,11 +313,49 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
       agentResponse.message = `I tried to use a tool but encountered an error: ${validation.error}. Could you clarify what you need?`;
       agentResponse.tool_request = null;
     } else {
-      // Check if this is a memory tool that should be auto-approved
+      // Check if this is a memory tool or MCP tool (both auto-executed)
       const isMemoryTool = agentResponse.tool_request.name.startsWith('memory.');
+      const isMcp = isMcpTool(agentResponse.tool_request.name);
       const shouldAutoApprove = isMemoryTool && shouldAutoApproveMemoryTool(agentResponse.tool_request);
 
-      if (shouldAutoApprove) {
+      if (isMcp && mcpManager) {
+        // Execute MCP tool immediately (auto-executed)
+        logger.debug({ tool: agentResponse.tool_request.name }, 'Auto-executing MCP tool');
+        const result = await mcpManager.executeTool(
+          agentResponse.tool_request.name,
+          agentResponse.tool_request.args,
+        );
+
+        const toolCall = await prisma.toolCall.create({
+          data: {
+            projectId: project_id,
+            threadId: threadIdToUse,
+            name: agentResponse.tool_request.name,
+            argsJson: JSON.stringify(agentResponse.tool_request.args),
+            requiresApproval: false,
+            risk: 'low',
+            status: result.ok ? 'completed' : 'failed',
+            resultJson: JSON.stringify(result),
+            toolsJson: JSON.stringify({ tools, source: requestContext?.source }),
+          },
+        });
+
+        await prisma.message.create({
+          data: {
+            threadId: threadIdToUse,
+            role: 'tool',
+            content: JSON.stringify({
+              tool_name: agentResponse.tool_request.name,
+              ok: result.ok,
+              data: result.data,
+              error: result.error,
+            }),
+          },
+        });
+
+        pendingToolCallId = toolCall.id;
+        autoExecutedResult = result;
+      } else if (shouldAutoApprove) {
         // Execute memory tool immediately (auto-approved)
         logger.debug({ tool: agentResponse.tool_request.name }, 'Auto-approving memory tool');
         const result = await executeMemoryTool(project_id, user_id, agentResponse.tool_request);
