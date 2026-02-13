@@ -440,6 +440,60 @@ export async function getAcceptedRules(
 }
 
 /**
+ * Count all accepted rules for a project (regardless of limit)
+ */
+export async function countAcceptedRules(projectId: string): Promise<number> {
+  return prisma.memoryItem.count({
+    where: {
+      projectId,
+      type: 'rule',
+      status: 'accepted',
+      OR: [
+        { expiresAt: null },
+        { expiresAt: { gt: new Date() } },
+      ],
+    },
+  });
+}
+
+/**
+ * Purge expired memory items from both Postgres and Qdrant.
+ * Returns the number of items purged.
+ */
+export async function purgeExpiredItems(projectId: string): Promise<number> {
+  const expired = await prisma.memoryItem.findMany({
+    where: {
+      projectId,
+      expiresAt: { lt: new Date() },
+    },
+    select: { id: true, qdrantPointId: true },
+  });
+
+  if (expired.length === 0) return 0;
+
+  // Delete from Qdrant first (best-effort)
+  for (const item of expired) {
+    if (item.qdrantPointId) {
+      try {
+        await deleteMemoryPoint(projectId, item.qdrantPointId);
+      } catch (err) {
+        logger.warn({ err, id: item.id, pointId: item.qdrantPointId }, 'Failed to delete expired Qdrant point');
+      }
+    }
+  }
+
+  // Delete from Postgres
+  const result = await prisma.memoryItem.deleteMany({
+    where: {
+      id: { in: expired.map((e) => e.id) },
+    },
+  });
+
+  logger.info({ projectId, purged: result.count }, 'Purged expired memory items');
+  return result.count;
+}
+
+/**
  * Create event memory item (auto-approved)
  */
 export async function createEvent(

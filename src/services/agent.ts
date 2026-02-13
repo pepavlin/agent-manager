@@ -279,6 +279,18 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
   const systemPrompt = assembleSystemPrompt(project.name, project.roleStatement, ragContext, allTools, requestContext?.source);
   const userPrompt = assembleUserPrompt(message, ragContext);
 
+  // Context size telemetry
+  logger.info(
+    {
+      project_id,
+      systemPromptChars: systemPrompt.length,
+      userPromptChars: userPrompt.length,
+      totalPromptChars: systemPrompt.length + userPrompt.length,
+      source: requestContext?.source,
+    },
+    'Prompt assembled'
+  );
+
   // Generate response
   const chatProvider = getChatProvider();
   let rawResponse: string;

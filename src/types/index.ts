@@ -126,6 +126,7 @@ export interface RetrievedContext {
   }>;
   memoryContext?: MemoryContext;
   learnedRules?: MemoryItem[];
+  learnedRulesTotal?: number;
 }
 
 // Embedding provider result

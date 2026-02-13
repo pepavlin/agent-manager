@@ -247,10 +247,15 @@ ${context.lessons.map((l, i) => `${i + 1}. ${l}`).join('\n')}`);
 
   // Learned rules (always visible, not dependent on semantic search)
   if (context.learnedRules && context.learnedRules.length > 0) {
+    const total = context.learnedRulesTotal ?? context.learnedRules.length;
+    const truncated = total > context.learnedRules.length;
+    const capWarning = truncated
+      ? `\n⚠ Showing ${context.learnedRules.length} of ${total} rules. Oldest rules are hidden. Use memory.propose_update to merge similar rules and reduce count.`
+      : '';
     parts.push(`
 ## LEARNED RULES (Self-Discovered)
 These are rules you learned from experience. Always follow them.
-${context.learnedRules.map(formatMemoryItem).join('\n')}`);
+${context.learnedRules.map(formatMemoryItem).join('\n')}${capWarning}`);
   }
 
   // Project brief

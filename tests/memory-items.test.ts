@@ -12,6 +12,8 @@ vi.mock('../src/db/client.js', () => {
       findMany: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
+      count: vi.fn(),
     },
   };
   return { prisma: mockPrisma };
@@ -55,6 +57,9 @@ import {
   getOpenLoops,
   getRecentEvents,
   getActiveIdeas,
+  getAcceptedRules,
+  countAcceptedRules,
+  purgeExpiredItems,
   createEvent,
   createMetric,
 } from '../src/services/memory-items.js';
@@ -568,6 +573,117 @@ describe('Memory Items Service', () => {
       expect(result.type).toBe('metric');
       expect(result.status).toBe('accepted');
       expect(result.expiresAt).not.toBeNull();
+    });
+  });
+
+  describe('getAcceptedRules', () => {
+    it('should fetch only accepted rules', async () => {
+      vi.mocked(prisma.memoryItem.findMany).mockResolvedValue([
+        { ...baseMockItem, type: 'rule', status: 'accepted' },
+      ] as never);
+
+      const result = await getAcceptedRules('proj-1');
+      expect(result).toHaveLength(1);
+      expect(vi.mocked(prisma.memoryItem.findMany)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            type: { in: ['rule'] },
+            status: { in: ['accepted'] },
+          }),
+          take: 20,
+        })
+      );
+    });
+
+    it('should respect custom limit', async () => {
+      vi.mocked(prisma.memoryItem.findMany).mockResolvedValue([]);
+
+      await getAcceptedRules('proj-1', 5);
+
+      expect(vi.mocked(prisma.memoryItem.findMany)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 5,
+        })
+      );
+    });
+  });
+
+  describe('countAcceptedRules', () => {
+    it('should count accepted rules', async () => {
+      vi.mocked(prisma.memoryItem.count).mockResolvedValue(42);
+
+      const result = await countAcceptedRules('proj-1');
+      expect(result).toBe(42);
+      expect(vi.mocked(prisma.memoryItem.count)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            projectId: 'proj-1',
+            type: 'rule',
+            status: 'accepted',
+          }),
+        })
+      );
+    });
+  });
+
+  describe('purgeExpiredItems', () => {
+    it('should delete expired items from DB and Qdrant', async () => {
+      const expiredItems = [
+        { id: 'mi-exp-1', qdrantPointId: 'qp-exp-1' },
+        { id: 'mi-exp-2', qdrantPointId: 'qp-exp-2' },
+      ];
+
+      vi.mocked(prisma.memoryItem.findMany).mockResolvedValue(expiredItems as never);
+      vi.mocked(prisma.memoryItem.deleteMany).mockResolvedValue({ count: 2 } as never);
+
+      const purged = await purgeExpiredItems('proj-1');
+
+      expect(purged).toBe(2);
+      expect(vi.mocked(deleteMemoryPoint)).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(deleteMemoryPoint)).toHaveBeenCalledWith('proj-1', 'qp-exp-1');
+      expect(vi.mocked(deleteMemoryPoint)).toHaveBeenCalledWith('proj-1', 'qp-exp-2');
+      expect(vi.mocked(prisma.memoryItem.deleteMany)).toHaveBeenCalledWith({
+        where: { id: { in: ['mi-exp-1', 'mi-exp-2'] } },
+      });
+    });
+
+    it('should return 0 when no expired items exist', async () => {
+      vi.mocked(prisma.memoryItem.findMany).mockResolvedValue([]);
+
+      const purged = await purgeExpiredItems('proj-1');
+
+      expect(purged).toBe(0);
+      expect(vi.mocked(deleteMemoryPoint)).not.toHaveBeenCalled();
+      expect(vi.mocked(prisma.memoryItem.deleteMany)).not.toHaveBeenCalled();
+    });
+
+    it('should handle items without Qdrant points', async () => {
+      const expiredItems = [
+        { id: 'mi-exp-1', qdrantPointId: null },
+      ];
+
+      vi.mocked(prisma.memoryItem.findMany).mockResolvedValue(expiredItems as never);
+      vi.mocked(prisma.memoryItem.deleteMany).mockResolvedValue({ count: 1 } as never);
+
+      const purged = await purgeExpiredItems('proj-1');
+
+      expect(purged).toBe(1);
+      expect(vi.mocked(deleteMemoryPoint)).not.toHaveBeenCalled();
+    });
+
+    it('should continue deleting from DB even if Qdrant delete fails', async () => {
+      const expiredItems = [
+        { id: 'mi-exp-1', qdrantPointId: 'qp-exp-1' },
+      ];
+
+      vi.mocked(prisma.memoryItem.findMany).mockResolvedValue(expiredItems as never);
+      vi.mocked(deleteMemoryPoint).mockRejectedValueOnce(new Error('Qdrant error'));
+      vi.mocked(prisma.memoryItem.deleteMany).mockResolvedValue({ count: 1 } as never);
+
+      const purged = await purgeExpiredItems('proj-1');
+
+      expect(purged).toBe(1);
+      expect(vi.mocked(prisma.memoryItem.deleteMany)).toHaveBeenCalled();
     });
   });
 });

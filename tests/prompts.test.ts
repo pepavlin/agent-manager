@@ -126,6 +126,31 @@ describe('Prompt Assembly', () => {
       expect(prompt).toContain('Use batch mode for bulk operations');
     });
 
+    it('should show cap warning when learnedRulesTotal exceeds displayed count', () => {
+      const context = makeEmptyContext();
+      context.learnedRules = [
+        makeMemoryItem({ type: 'rule', title: 'Rule A' }),
+      ];
+      context.learnedRulesTotal = 35;
+      const prompt = assembleSystemPrompt('Test', 'Test', context, []);
+      expect(prompt).toContain('Showing 1 of 35 rules');
+      expect(prompt).toContain('Oldest rules are hidden');
+      expect(prompt).toContain('merge similar rules');
+    });
+
+    it('should NOT show cap warning when all rules fit within limit', () => {
+      const context = makeEmptyContext();
+      context.learnedRules = [
+        makeMemoryItem({ type: 'rule', title: 'Rule A' }),
+        makeMemoryItem({ type: 'rule', title: 'Rule B' }),
+      ];
+      context.learnedRulesTotal = 2;
+      const prompt = assembleSystemPrompt('Test', 'Test', context, []);
+      expect(prompt).toContain('LEARNED RULES');
+      expect(prompt).not.toContain('Showing');
+      expect(prompt).not.toContain('hidden');
+    });
+
     it('should omit LEARNED RULES when learnedRules is empty', () => {
       const context = makeEmptyContext();
       context.learnedRules = [];

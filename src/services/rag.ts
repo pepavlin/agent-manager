@@ -8,6 +8,7 @@ import {
   getRecentEvents,
   getActiveIdeas,
   getAcceptedRules,
+  countAcceptedRules,
   searchMemoryItems,
 } from './memory-items.js';
 
@@ -134,10 +135,14 @@ export async function retrieveContext(
     }));
   }
 
-  // Fetch accepted rules (always-visible in system prompt)
+  // Fetch accepted rules (always-visible in system prompt) + total count for cap awareness
   let learnedRules: MemoryItem[] = [];
+  let learnedRulesTotal = 0;
   try {
-    learnedRules = await getAcceptedRules(projectId);
+    [learnedRules, learnedRulesTotal] = await Promise.all([
+      getAcceptedRules(projectId),
+      countAcceptedRules(projectId),
+    ]);
   } catch (error) {
     logger.warn({ error, projectId }, 'Failed to get accepted rules, continuing without');
   }
@@ -187,6 +192,7 @@ export async function retrieveContext(
     recentMessages,
     memoryContext,
     learnedRules,
+    learnedRulesTotal,
   };
 }
 
