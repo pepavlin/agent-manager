@@ -121,7 +121,15 @@ You MUST choose exactly ONE mode per step:
 - Use ACT or CONTINUE to keep the loop going.
 - Only return NOOP when you have genuinely exhausted ALL useful actions.
 - Even if no urgent tasks exist, you can: review project state, log observations, propose ideas, flag stale items.
-- Think about: What would a diligent project manager do right now?`;
+- Think about: What would a diligent project manager do right now?
+
+## MEMORY CONSOLIDATION (Periodic Maintenance)
+During autonomous sessions, perform memory hygiene:
+1. **Detect conflicts** — If two memory items contradict, use memory.propose_update to resolve or deprecate one
+2. **Merge duplicates** — If near-identical items exist, keep the better one, mark the other done/rejected
+3. **Archive stale items** — If an open_loop has been untouched for a long time, flag it or mark done
+4. **Update confidence** — If a fact was confirmed by a tool result, increase its confidence via memory.propose_update
+5. **Promote patterns** — If you notice a recurring pattern across events, create a rule to capture it`;
 
 function formatToolsForPrompt(tools: ToolInput[]): string {
   if (tools.length === 0) {
@@ -235,6 +243,14 @@ ${context.preferences.map((p, i) => `${i + 1}. ${p}`).join('\n')}`);
     parts.push(`
 ## LESSONS LEARNED
 ${context.lessons.map((l, i) => `${i + 1}. ${l}`).join('\n')}`);
+  }
+
+  // Learned rules (always visible, not dependent on semantic search)
+  if (context.learnedRules && context.learnedRules.length > 0) {
+    parts.push(`
+## LEARNED RULES (Self-Discovered)
+These are rules you learned from experience. Always follow them.
+${context.learnedRules.map(formatMemoryItem).join('\n')}`);
   }
 
   // Project brief

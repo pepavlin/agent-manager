@@ -7,6 +7,7 @@ import {
   getOpenLoops,
   getRecentEvents,
   getActiveIdeas,
+  getAcceptedRules,
   searchMemoryItems,
 } from './memory-items.js';
 
@@ -133,6 +134,14 @@ export async function retrieveContext(
     }));
   }
 
+  // Fetch accepted rules (always-visible in system prompt)
+  let learnedRules: MemoryItem[] = [];
+  try {
+    learnedRules = await getAcceptedRules(projectId);
+  } catch (error) {
+    logger.warn({ error, projectId }, 'Failed to get accepted rules, continuing without');
+  }
+
   // Retrieve memory context if enabled
   let memoryContext: MemoryContext | undefined;
   if (options.includeMemoryContext !== false) {
@@ -161,6 +170,7 @@ export async function retrieveContext(
       hasPlaybook: !!playbook,
       hasBrief: !!brief,
       messages: recentMessages.length,
+      learnedRules: learnedRules.length,
       hasMemoryContext: !!memoryContext,
       openLoops: memoryContext?.openLoops.length ?? 0,
       recentEvents: memoryContext?.recentEvents.length ?? 0,
@@ -176,6 +186,7 @@ export async function retrieveContext(
     brief,
     recentMessages,
     memoryContext,
+    learnedRules,
   };
 }
 

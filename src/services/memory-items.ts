@@ -424,6 +424,22 @@ export async function getActiveIdeas(
 }
 
 /**
+ * Get accepted rules for a project (always-visible in system prompt)
+ */
+export async function getAcceptedRules(
+  projectId: string,
+  limit: number = 20
+): Promise<MemoryItem[]> {
+  return getMemoryItems(projectId, {
+    types: ['rule'],
+    statuses: ['accepted'],
+    limit,
+    orderBy: 'createdAt',
+    orderDir: 'desc',
+  });
+}
+
+/**
  * Create event memory item (auto-approved)
  */
 export async function createEvent(

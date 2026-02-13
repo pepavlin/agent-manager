@@ -113,6 +113,45 @@ describe('Prompt Assembly', () => {
       expect(prompt).not.toContain('PROJECT RULES (PLAYBOOK)');
     });
 
+    it('should include LEARNED RULES when learnedRules are present', () => {
+      const context = makeEmptyContext();
+      context.learnedRules = [
+        makeMemoryItem({ type: 'rule', title: 'Always validate input before API calls', content: { detail: 'Prevents 400 errors' } }),
+        makeMemoryItem({ type: 'rule', title: 'Use batch mode for bulk operations', content: { detail: 'Improves performance' } }),
+      ];
+      const prompt = assembleSystemPrompt('Test', 'Test', context, []);
+      expect(prompt).toContain('LEARNED RULES (Self-Discovered)');
+      expect(prompt).toContain('Always follow them');
+      expect(prompt).toContain('Always validate input before API calls');
+      expect(prompt).toContain('Use batch mode for bulk operations');
+    });
+
+    it('should omit LEARNED RULES when learnedRules is empty', () => {
+      const context = makeEmptyContext();
+      context.learnedRules = [];
+      const prompt = assembleSystemPrompt('Test', 'Test', context, []);
+      expect(prompt).not.toContain('LEARNED RULES');
+    });
+
+    it('should omit LEARNED RULES when learnedRules is undefined', () => {
+      const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), []);
+      expect(prompt).not.toContain('LEARNED RULES');
+    });
+
+    it('should include MEMORY CONSOLIDATION section in cron mode', () => {
+      const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), [], 'cron');
+      expect(prompt).toContain('MEMORY CONSOLIDATION (Periodic Maintenance)');
+      expect(prompt).toContain('Detect conflicts');
+      expect(prompt).toContain('Merge duplicates');
+      expect(prompt).toContain('Archive stale items');
+      expect(prompt).toContain('Promote patterns');
+    });
+
+    it('should NOT include MEMORY CONSOLIDATION in chat mode', () => {
+      const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), []);
+      expect(prompt).not.toContain('MEMORY CONSOLIDATION');
+    });
+
     it('should NOT include memory_updates in response schema', () => {
       const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), []);
       expect(prompt).not.toContain('memory_updates');
