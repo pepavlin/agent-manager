@@ -10,6 +10,7 @@ services:
     volumes:
       - ./src:/app/src:ro
       - ./prisma:/app/prisma:ro
+      - ./mcp.json:/app/mcp.json:ro
       - agent-data:/app/data
     entrypoint: ["docker-entrypoint.sh"]
     command: ["npm", "run", "dev"]
