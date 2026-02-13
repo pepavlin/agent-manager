@@ -591,9 +591,16 @@ export async function processToolResult(
   }
 
   // Automatically call processChat so the agent can respond to the tool result
+  // Skip reflection for memory tools to avoid recursive self-reflection loops
+  const isMemoryToolResult = toolCall.name.startsWith('memory.');
+  const reflectionSuffix = isMemoryToolResult
+    ? ''
+    : ok
+      ? '\n\n[REFLECTION]: Consider what you learned from this outcome. If there is a reusable lesson or rule (e.g. "always do X before Y", "tool Z requires parameter W"), store it using memory.propose_add with type="rule" or type="lesson".'
+      : '\n\n[REFLECTION]: Analyze why this failed. If there is a lesson or rule to prevent this in the future (e.g. "always validate X before calling Y"), store it using memory.propose_add with type="rule" or type="lesson".';
   const resultSummary = ok
-    ? `Tool "${toolCall.name}" completed successfully. Result: ${truncateForContext(data)}\n\n[REFLECTION]: Consider what you learned from this outcome. If there is a reusable lesson or rule (e.g. "always do X before Y", "tool Z requires parameter W"), store it using memory.propose_add with type="rule" or type="lesson".`
-    : `Tool "${toolCall.name}" failed. Error: ${error || 'Unknown error'}\n\n[REFLECTION]: Analyze why this failed. If there is a lesson or rule to prevent this in the future (e.g. "always validate X before calling Y"), store it using memory.propose_add with type="rule" or type="lesson".`;
+    ? `Tool "${toolCall.name}" completed successfully. Result: ${truncateForContext(data)}${reflectionSuffix}`
+    : `Tool "${toolCall.name}" failed. Error: ${error || 'Unknown error'}${reflectionSuffix}`;
 
   const chatResponse = await processChat({
     project_id: projectId,
