@@ -56,6 +56,7 @@ async function buildApp(): Promise<FastifyInstance> {
         { name: 'Documents', description: 'Document upload and indexing' },
         { name: 'Chat', description: 'Chat with the AI agent' },
         { name: 'Tools', description: 'Tool execution callbacks' },
+        { name: 'Maintenance', description: 'Database maintenance and cleanup' },
       ],
     },
     transform: ({ schema, url, ...rest }) => {

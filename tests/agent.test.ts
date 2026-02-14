@@ -349,9 +349,10 @@ describe('Agent Service', () => {
         tools: [],
       });
 
-      // Should fall back to safe ASK response
+      // Should fall back to safe ASK response with descriptive error
       expect(result.response_json.mode).toBe('ASK');
-      expect(result.response_json.message).toContain('issue');
+      expect(result.response_json.message).toContain('non-JSON response');
+      expect(result.response_json.message).toContain('This is not JSON at all');
     });
 
     it('should auto-approve memory event tools and return auto_executed fields', async () => {

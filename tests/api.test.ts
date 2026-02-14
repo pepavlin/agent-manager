@@ -62,6 +62,8 @@ vi.mock('../src/db/client.js', () => {
       findMany: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
+      count: vi.fn(),
     },
   };
 
@@ -87,6 +89,11 @@ vi.mock('../src/services/qdrant.js', () => ({
   searchSimilar: vi.fn().mockResolvedValue([]),
   deleteByDocumentId: vi.fn(),
   deleteCollection: vi.fn(),
+  ensureMemoryCollection: vi.fn(),
+  upsertMemoryPoints: vi.fn(),
+  searchMemory: vi.fn().mockResolvedValue([]),
+  deleteMemoryPoint: vi.fn(),
+  getMemoryCollectionName: vi.fn((id: string) => `mem_${id}`),
   getCollectionName: vi.fn((id: string) => `kb_${id}`),
 }));
 
@@ -488,6 +495,47 @@ describe('API Integration Tests', () => {
       expect(body.response_json).toBeDefined();
       expect(body.response_json.mode).toBe('NOOP');
       expect(body.render.text_to_send_to_user).toBeDefined();
+    });
+  });
+
+  describe('Maintenance API', () => {
+    it('POST /maintenance/purge-expired should purge expired items', async () => {
+      vi.mocked(prisma.memoryItem.findMany).mockResolvedValueOnce([
+        { id: 'mi-exp-1', qdrantPointId: 'qp-1' },
+      ] as never);
+      vi.mocked(prisma.memoryItem.deleteMany).mockResolvedValueOnce({ count: 1 } as never);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/maintenance/purge-expired',
+        headers: {
+          'x-agent-key': 'test-api-key',
+          'content-type': 'application/json',
+        },
+        payload: {
+          project_id: 'test-project-id',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.purged).toBe(1);
+      expect(body.project_id).toBe('test-project-id');
+    });
+
+    it('POST /maintenance/purge-expired should require auth', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/maintenance/purge-expired',
+        headers: {
+          'content-type': 'application/json',
+        },
+        payload: {
+          project_id: 'test-project-id',
+        },
+      });
+
+      expect(response.statusCode).toBe(401);
     });
   });
 

@@ -301,7 +301,12 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
     });
   } catch (providerError) {
     logger.error({ error: providerError }, 'Chat provider failed to generate response');
-    rawResponse = '';
+    const errMsg = providerError instanceof Error ? providerError.message : String(providerError);
+    rawResponse = JSON.stringify({
+      mode: 'ASK',
+      message: `LLM provider error: ${errMsg}`,
+      tool_request: null,
+    });
   }
 
   // Parse and validate response (gracefully falls back to ASK on bad/empty input)
@@ -464,7 +469,10 @@ function parseAgentResponse(raw: string): AgentResponse {
   const extracted = extractJson(raw);
   if (!extracted) {
     logger.warn({ raw: raw.slice(0, 200) }, 'Could not extract JSON from response');
-    return createSafeResponse('I encountered an issue processing your request. Could you rephrase?');
+    const preview = raw.length > 0
+      ? `LLM returned non-JSON response: "${raw.slice(0, 100)}${raw.length > 100 ? '...' : ''}"`
+      : 'LLM returned an empty response.';
+    return createSafeResponse(preview);
   }
 
   try {
@@ -472,14 +480,16 @@ function parseAgentResponse(raw: string): AgentResponse {
     const validated = AgentResponseSchema.safeParse(parsed);
 
     if (!validated.success) {
+      const issues = validated.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ');
       logger.warn({ errors: validated.error.errors }, 'Response validation failed');
-      return createSafeResponse('I encountered an issue processing your request. Could you rephrase?');
+      return createSafeResponse(`LLM response had invalid structure: ${issues}`);
     }
 
     return validated.data;
   } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
     logger.error({ error, raw: raw.slice(0, 200) }, 'Failed to parse response');
-    return createSafeResponse('I encountered an issue processing your request. Could you rephrase?');
+    return createSafeResponse(`Failed to parse LLM response: ${errMsg}`);
   }
 }
 
