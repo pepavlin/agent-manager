@@ -33,7 +33,7 @@ services:
       - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-100}
       - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-      - MCP_CONFIG_PATH=${MCP_CONFIG_PATH:-}
+      - MCP_CONFIG_PATH=${MCP_CONFIG_PATH:-/app/mcp.json}
     volumes:
       - agent-data:/app/data
       - ./mcp.json:/app/mcp.json:ro
