@@ -34,6 +34,7 @@ const configSchema = z.object({
 
   // Claude CLI
   claudeCliCmd: z.string().default('claude'),
+  claudeCliModel: z.string().optional(),
   claudeCliTimeout: z.coerce.number().default(60000),
 
   // Ollama
@@ -75,6 +76,7 @@ function loadConfig(): z.infer<typeof configSchema> {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     anthropicModel: process.env.ANTHROPIC_MODEL,
     claudeCliCmd: process.env.CLAUDE_CLI_CMD,
+    claudeCliModel: process.env.CLAUDE_CLI_MODEL,
     claudeCliTimeout: process.env.CLAUDE_CLI_TIMEOUT,
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL,
     ollamaEmbeddingModel: process.env.OLLAMA_EMBEDDING_MODEL,

@@ -14,11 +14,13 @@ export class ClaudeCliChatProvider implements IChatProvider {
   readonly name = 'claude_cli';
   private command: string;
   private timeout: number;
+  private model: string | undefined;
 
   constructor() {
     this.command = config.claudeCliCmd;
     this.timeout = config.claudeCliTimeout;
-    logger.info({ command: this.command, timeout: this.timeout }, 'Claude CLI provider initialized');
+    this.model = config.claudeCliModel;
+    logger.info({ command: this.command, timeout: this.timeout, model: this.model || '(default)' }, 'Claude CLI provider initialized');
   }
 
   async generateJSON(input: { system: string; user: string }): Promise<string> {
@@ -64,7 +66,13 @@ export class ClaudeCliChatProvider implements IChatProvider {
       let stderr = '';
       let killed = false;
 
-      const proc = spawn(this.command, ['--print', '-'], {
+      const args = ['--print'];
+      if (this.model) {
+        args.push('--model', this.model);
+      }
+      args.push('-');
+
+      const proc = spawn(this.command, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: this.timeout,
       });
