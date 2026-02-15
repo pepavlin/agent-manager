@@ -1,6 +1,6 @@
 import { RetrievedContext, ToolInput, MemoryItem } from '../types/index.js';
 
-const PROMPT_CORE = `You are a project manager AI assistant. You help manage projects by understanding context from documents, tracking decisions, and coordinating work.
+export const PROMPT_CORE = `You are a project manager AI assistant. You help manage projects by understanding context from documents, tracking decisions, and coordinating work.
 
 ## STRICT RESPONSE FORMAT
 You MUST respond with ONLY a valid JSON object. No markdown, no explanation, just JSON.
@@ -72,7 +72,7 @@ When the user corrects or updates a previously stated fact:
 - Use appropriate types: fact for knowledge, decision for choices, rule for constraints
 - For corrections, use memory.propose_update to update existing items instead of creating duplicates`;
 
-const CHAT_MODE_RULES = `
+export const CHAT_MODE_RULES = `
 ## DECISION LOOP
 For each user message, you MUST choose exactly ONE mode:
 
@@ -94,7 +94,7 @@ For each user message, you MUST choose exactly ONE mode:
 - Any write/create action must have requires_approval=true
 - If unsure, ASK`;
 
-const CRON_MODE_RULES = `
+export const CRON_MODE_RULES = `
 ## DECISION LOOP (AUTONOMOUS WORK SESSION)
 This is an automated work session. There is NO user present. You work autonomously.
 You MUST choose exactly ONE mode per step:

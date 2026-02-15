@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 
 // Mock Prisma
@@ -21,6 +21,7 @@ vi.mock('../src/db/client.js', () => {
     kbChunk: {
       createMany: vi.fn(),
       deleteMany: vi.fn(),
+      findMany: vi.fn(),
       count: vi.fn(),
     },
     thread: {
@@ -148,6 +149,7 @@ describe('API Integration Tests', () => {
   afterAll(async () => {
     await app.close();
   });
+
 
   describe('Health Check', () => {
     it('GET /health should return 200', async () => {
@@ -533,6 +535,127 @@ describe('API Integration Tests', () => {
         payload: {
           project_id: 'test-project-id',
         },
+      });
+
+      expect(response.statusCode).toBe(401);
+    });
+  });
+
+  describe('Prompt Debug API', () => {
+    it('GET /projects/:id/prompt-debug should return prompt sections with sizes', async () => {
+      // Clear stale mock queues from previous tests to avoid unconsumed values
+      vi.mocked(prisma.project.findUnique).mockReset();
+      vi.mocked(prisma.projectBrief.findUnique).mockReset();
+      vi.mocked(prisma.kbChunk.findMany).mockReset();
+      vi.mocked(prisma.preference.findMany).mockReset();
+      vi.mocked(prisma.lesson.findMany).mockReset();
+      vi.mocked(prisma.memoryItem.findMany).mockReset();
+      vi.mocked(prisma.memoryItem.count).mockReset();
+
+      const mockProject = {
+        id: 'test-project-id',
+        name: 'Test Project',
+        roleStatement: 'Test role statement',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      vi.mocked(prisma.project.findUnique).mockResolvedValueOnce(mockProject);
+      // Playbook chunks
+      vi.mocked(prisma.kbChunk.findMany).mockResolvedValueOnce([
+        { text: 'Rule 1: Always do X', chunkIndex: 0 },
+        { text: 'Rule 2: Never do Y', chunkIndex: 1 },
+      ] as never);
+      // Brief
+      vi.mocked(prisma.projectBrief.findUnique).mockResolvedValueOnce({
+        projectId: 'test-project-id',
+        briefMarkdown: '# Project Brief\nThis is a test brief.',
+      } as never);
+      // Preferences
+      vi.mocked(prisma.preference.findMany).mockResolvedValueOnce([
+        { ruleText: 'Always respond in Czech' },
+      ] as never);
+      // Lessons
+      vi.mocked(prisma.lesson.findMany).mockResolvedValueOnce([
+        { lessonText: 'Users prefer concise answers' },
+      ] as never);
+      // Learned rules (getAcceptedRules -> getMemoryItems -> prisma.memoryItem.findMany)
+      vi.mocked(prisma.memoryItem.findMany).mockResolvedValueOnce([
+        {
+          id: 'rule-1',
+          type: 'rule',
+          status: 'accepted',
+          title: 'Use formal tone',
+          content: { detail: 'Always use formal language' },
+        },
+      ] as never);
+      // countAcceptedRules
+      vi.mocked(prisma.memoryItem.count).mockResolvedValueOnce(1);
+      // getOpenLoops
+      vi.mocked(prisma.memoryItem.findMany).mockResolvedValueOnce([]);
+      // getRecentEvents
+      vi.mocked(prisma.memoryItem.findMany).mockResolvedValueOnce([]);
+      // getActiveIdeas
+      vi.mocked(prisma.memoryItem.findMany).mockResolvedValueOnce([]);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/projects/test-project-id/prompt-debug?user_id=test-user',
+        headers: {
+          'x-agent-key': 'test-api-key',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+
+      // Check structure
+      expect(body.project_id).toBe('test-project-id');
+      expect(body.project_name).toBe('Test Project');
+      expect(body.mode).toBe('chat');
+      expect(body.user_id).toBe('test-user');
+      expect(body.totals).toBeDefined();
+      expect(body.totals.chars).toBeGreaterThan(0);
+      expect(body.totals.estimated_tokens).toBeGreaterThan(0);
+
+      // Check breakdown
+      expect(body.breakdown).toBeDefined();
+      expect(Array.isArray(body.breakdown)).toBe(true);
+      expect(body.breakdown.length).toBeGreaterThan(0);
+      // Sorted by size descending
+      for (let i = 1; i < body.breakdown.length; i++) {
+        expect(body.breakdown[i - 1].chars).toBeGreaterThanOrEqual(body.breakdown[i].chars);
+      }
+
+      // Check sections have content
+      expect(body.sections.prompt_core.chars).toBeGreaterThan(0);
+      expect(body.sections.playbook.content).toContain('Rule 1');
+      expect(body.sections.playbook.items_count).toBe(2);
+      expect(body.sections.project_brief.content).toContain('Project Brief');
+      expect(body.sections.preferences.items_count).toBe(1);
+      expect(body.sections.lessons.items_count).toBe(1);
+      expect(body.sections.learned_rules.items_count).toBe(1);
+      expect(body.sections.learned_rules.content).toContain('Use formal tone');
+    });
+
+    it('GET /projects/:id/prompt-debug should return 404 for unknown project', async () => {
+      vi.mocked(prisma.project.findUnique).mockResolvedValueOnce(null);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/projects/nonexistent/prompt-debug',
+        headers: {
+          'x-agent-key': 'test-api-key',
+        },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+
+    it('GET /projects/:id/prompt-debug should require auth', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/projects/test-project-id/prompt-debug',
       });
 
       expect(response.statusCode).toBe(401);
