@@ -106,7 +106,8 @@ export class ClaudeCliChatProvider implements IChatProvider {
         }
 
         if (code !== 0) {
-          reject(new Error(`Claude CLI exited with code ${code}: ${stderr || 'No error output'}`));
+          logger.error({ code, stderr: stderr || '(empty)', stdout: stdout?.substring(0, 500) || '(empty)' }, 'CLI exited with non-zero code');
+          reject(new Error(`Claude CLI exited with code ${code}: ${stderr || stdout || 'No error output'}`));
           return;
         }
 
