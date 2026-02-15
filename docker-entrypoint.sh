@@ -6,8 +6,8 @@ if [ -n "$CLAUDE_OAUTH_TOKEN" ]; then
   CLAUDE_DIR="$HOME/.claude"
   mkdir -p "$CLAUDE_DIR"
 
-  # Calculate expiresAt (24 hours from now in milliseconds)
-  EXPIRES_AT=$(node -e "console.log(Date.now() + 86400000)")
+  # Set expiresAt far in the future (year 2099)
+  EXPIRES_AT=4102444800000
 
   cat > "$CLAUDE_DIR/.credentials.json" << CREDENTIALS_EOF
 {
