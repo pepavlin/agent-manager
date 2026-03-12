@@ -6,9 +6,9 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "${PORT:-3000}:3000"
+      - "${PORT:-3000}:${PORT:-3000}"
     environment:
-      - PORT=3000
+      - PORT=${PORT:-3000}
       - HOST=0.0.0.0
       - NODE_ENV=${NODE_ENV:-production}
       - AGENT_API_KEY=${AGENT_API_KEY}

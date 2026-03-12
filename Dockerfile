@@ -74,9 +74,9 @@ USER agent
 # Expose port
 EXPOSE 3000
 
-# Health check
+# Health check (uses PORT env var, defaults to 3000)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://localhost:3000/health').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://localhost:'+(process.env.PORT||3000)+'/health').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"
 
 # Entrypoint writes credentials, then runs the command
 ENTRYPOINT ["dumb-init", "--", "docker-entrypoint.sh"]
