@@ -130,13 +130,15 @@ async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
-  // Request logging
+  // Request logging (skip static assets)
   app.addHook('onRequest', async (request) => {
+    if (request.url.startsWith('/assets/') || request.url === '/favicon.svg') return;
     serverLogger.info({ method: request.method, url: request.url }, 'Request');
   });
 
-  // Response logging
+  // Response logging (skip static assets)
   app.addHook('onResponse', async (request, reply) => {
+    if (request.url.startsWith('/assets/') || request.url === '/favicon.svg') return;
     serverLogger.info(
       { method: request.method, url: request.url, status: reply.statusCode },
       'Response'
@@ -184,7 +186,6 @@ async function buildApp(): Promise<FastifyInstance> {
   await app.register(fastifyStatic, {
     root: join(__dirname, '..', 'public'),
     prefix: '/',
-    decorateReply: false,
   });
 
   // SPA fallback - serve index.html for unmatched routes

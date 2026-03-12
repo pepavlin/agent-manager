@@ -5,8 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Development Commands
 
 ```bash
-npm run dev          # Start dev server with hot reload (tsx watch)
-npm run build        # Compile TypeScript to dist/
+npm run dev          # Start backend dev server with hot reload (tsx watch)
+npm run dev:frontend # Start frontend Vite dev server (proxies API to :3000)
+npm run build        # Build backend (tsc) + frontend (vite)
+npm run build:frontend # Build frontend only
 npm run start        # Run compiled server
 npm run typecheck    # Type check without emitting
 npm run lint         # ESLint on src/
@@ -196,6 +198,15 @@ Key tables in `prisma/schema.prisma`:
 - `memory_items` - New unified memory system (facts, events, decisions, etc.)
 - `preferences` / `lessons` - Legacy memory system (write-through to memory_items)
 
+## Frontend (Admin Dashboard)
+
+React SPA in `frontend/` built with Vite + Tailwind CSS v4. Build output goes to `public/`, served by Fastify via `@fastify/static`.
+
+- **Login**: Agent API Key + Project ID (stored in sessionStorage)
+- **Tabs**: Overview, Chat, Memory, Documents, Threads, Tool Calls
+- **Dev workflow**: Run `npm run dev` (backend) + `npm run dev:frontend` (Vite with API proxy)
+- **Docker**: Frontend is built in a separate Docker stage, output copied to production image
+
 ## API Endpoints (Simplified)
 
 ```
@@ -204,9 +215,19 @@ POST /projects            # Create project
 POST /projects/:id/docs   # Upload document
 POST /chat                # Chat with agent
 POST /tools/result        # Tool execution callback
+
+# Dashboard API (require X-AGENT-KEY)
+GET  /api/project/:id              # Project details
+GET  /api/project/:id/threads      # List threads
+GET  /api/project/:id/threads/:tid # Thread messages
+GET  /api/project/:id/memory-items # List memory items
+GET  /api/project/:id/documents    # List documents
+GET  /api/project/:id/tool-calls   # List tool calls
+PATCH /api/memory-items/:id        # Update memory item
+DELETE /api/memory-items/:id       # Delete memory item
 ```
 
-All endpoints except `/health` and `/docs/*` require `X-AGENT-KEY` header.
+All endpoints except `/health`, `/docs/*`, and static files require `X-AGENT-KEY` header.
 
 ## Testing Configuration
 
