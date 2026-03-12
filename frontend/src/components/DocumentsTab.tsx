@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Upload } from 'lucide-react';
+import { Upload, Trash2 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import type { DocumentItem } from '../lib/types';
 
@@ -19,6 +19,7 @@ export default function DocumentsTab({ projectId }: Props) {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState('');
   const [uploadError, setUploadError] = useState('');
+  const [deleting, setDeleting] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadDocuments(); }, [projectId]);
@@ -67,6 +68,25 @@ export default function DocumentsTab({ projectId }: Props) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleDelete(docId: string, filename: string) {
+    if (!confirm(`Delete "${filename}" and all its chunks?`)) return;
+
+    setDeleting(docId);
+    try {
+      const res = await apiFetch(`/api/documents/${docId}`, { method: 'DELETE' });
+      if (res.ok) {
+        loadDocuments();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Delete failed');
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setDeleting(null);
     }
   }
 
@@ -122,12 +142,13 @@ export default function DocumentsTab({ projectId }: Props) {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Chunks</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Version</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {documents.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-gray-400 text-sm">
+                <td colSpan={6} className="px-6 py-8 text-center text-gray-400 text-sm">
                   No documents uploaded
                 </td>
               </tr>
@@ -143,6 +164,16 @@ export default function DocumentsTab({ projectId }: Props) {
                 <td className="px-6 py-3 text-sm text-gray-500">{doc.chunks_count}</td>
                 <td className="px-6 py-3 text-sm text-gray-500">v{doc.version}</td>
                 <td className="px-6 py-3 text-sm text-gray-500">{formatDate(doc.created_at)}</td>
+                <td className="px-6 py-3 text-right">
+                  <button
+                    onClick={() => handleDelete(doc.id, doc.filename)}
+                    disabled={deleting === doc.id}
+                    title="Delete document"
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

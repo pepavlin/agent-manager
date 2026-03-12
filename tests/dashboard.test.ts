@@ -16,7 +16,9 @@ vi.mock('../src/db/client.js', () => {
     },
     document: {
       create: vi.fn(),
+      findUnique: vi.fn(),
       findMany: vi.fn(),
+      delete: vi.fn(),
     },
     kbChunk: {
       createMany: vi.fn(),
@@ -109,6 +111,13 @@ vi.mock('../src/providers/embeddings/index.js', () => {
     }),
   };
 });
+
+// Mock storage utility
+vi.mock('../src/utils/storage.js', () => ({
+  storeFile: vi.fn().mockResolvedValue({ path: 'test/path', sha256: 'abc' }),
+  readStoredFile: vi.fn().mockResolvedValue(Buffer.from('test')),
+  deleteStoredFile: vi.fn().mockResolvedValue(undefined),
+}));
 
 // Mock RAG service
 vi.mock('../src/services/rag.js', () => ({
@@ -445,6 +454,184 @@ describe('Dashboard API Routes', () => {
       expect(body.items).toHaveLength(1);
       expect(body.items[0].name).toBe('jira.create_ticket');
       expect(body.items[0].args).toEqual({ summary: 'Test' });
+    });
+  });
+
+  describe('DELETE /api/documents/:id', () => {
+    it('should delete a document', async () => {
+      vi.mocked(prisma.document.findUnique).mockResolvedValueOnce({
+        id: 'doc-1',
+        projectId: PROJECT_ID,
+        category: 'FACTS',
+        filename: 'readme.md',
+        mime: 'text/markdown',
+        storagePath: 'data/uploads/test/readme.md',
+        sha256: 'abc',
+        version: 1,
+        createdAt: new Date(),
+      } as never);
+      vi.mocked(prisma.kbChunk.deleteMany).mockResolvedValueOnce({ count: 5 } as never);
+      vi.mocked(prisma.document.delete).mockResolvedValueOnce({} as never);
+
+      const res = await app.inject({
+        method: 'DELETE',
+        url: '/api/documents/doc-1',
+        headers: { 'x-agent-key': API_KEY },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.ok).toBe(true);
+    });
+
+    it('should return 404 for non-existent document', async () => {
+      vi.mocked(prisma.document.findUnique).mockResolvedValueOnce(null);
+
+      const res = await app.inject({
+        method: 'DELETE',
+        url: '/api/documents/nonexistent',
+        headers: { 'x-agent-key': API_KEY },
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
+  describe('POST /api/project/:id/memory-items/bulk', () => {
+    it('should accept multiple memory items', async () => {
+      // Mock for each item in the loop (updateMemoryItem calls findUnique + update)
+      for (let i = 0; i < 2; i++) {
+        vi.mocked(prisma.memoryItem.findUnique).mockResolvedValueOnce({
+          id: `mem-${i}`,
+          projectId: PROJECT_ID,
+          type: 'fact',
+          title: 'Test',
+          content: {},
+          status: 'proposed',
+          source: 'user_chat',
+          confidence: 0.5,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          expiresAt: null,
+          tags: [],
+          qdrantPointId: null,
+          userId: null,
+          supersedesId: null,
+        } as never);
+        vi.mocked(prisma.memoryItem.update).mockResolvedValueOnce({
+          id: `mem-${i}`,
+          status: 'accepted',
+        } as never);
+      }
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/project/${PROJECT_ID}/memory-items/bulk`,
+        headers: {
+          'x-agent-key': API_KEY,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'accept', ids: ['mem-0', 'mem-1'] }),
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.processed).toBe(2);
+      expect(body.errors).toHaveLength(0);
+    });
+
+    it('should delete multiple memory items', async () => {
+      for (let i = 0; i < 2; i++) {
+        vi.mocked(prisma.memoryItem.findUnique).mockResolvedValueOnce({
+          id: `mem-${i}`,
+          projectId: PROJECT_ID,
+          qdrantPointId: null,
+        } as never);
+        vi.mocked(prisma.memoryItem.delete).mockResolvedValueOnce({} as never);
+      }
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/project/${PROJECT_ID}/memory-items/bulk`,
+        headers: {
+          'x-agent-key': API_KEY,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'delete', ids: ['mem-0', 'mem-1'] }),
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.processed).toBe(2);
+    });
+
+    it('should report errors for failed items', async () => {
+      vi.mocked(prisma.memoryItem.findUnique).mockResolvedValueOnce(null);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/project/${PROJECT_ID}/memory-items/bulk`,
+        headers: {
+          'x-agent-key': API_KEY,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'delete', ids: ['nonexistent'] }),
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.processed).toBe(0);
+      expect(body.errors).toHaveLength(1);
+    });
+  });
+
+  describe('DELETE /api/project/:id/memory-items/purge', () => {
+    it('should purge memory items by type filter', async () => {
+      vi.mocked(prisma.memoryItem.findMany).mockResolvedValueOnce([
+        { id: 'mem-1' },
+        { id: 'mem-2' },
+      ] as never);
+
+      // deleteMemoryItem calls for each item
+      for (let i = 0; i < 2; i++) {
+        vi.mocked(prisma.memoryItem.findUnique).mockResolvedValueOnce({
+          id: `mem-${i + 1}`,
+          projectId: PROJECT_ID,
+          qdrantPointId: null,
+        } as never);
+        vi.mocked(prisma.memoryItem.delete).mockResolvedValueOnce({} as never);
+      }
+
+      const res = await app.inject({
+        method: 'DELETE',
+        url: `/api/project/${PROJECT_ID}/memory-items/purge?type=event`,
+        headers: { 'x-agent-key': API_KEY },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.deleted).toBe(2);
+      expect(body.total).toBe(2);
+    });
+
+    it('should require at least type or status filter', async () => {
+      const res = await app.inject({
+        method: 'DELETE',
+        url: `/api/project/${PROJECT_ID}/memory-items/purge`,
+        headers: { 'x-agent-key': API_KEY },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('should reject invalid type', async () => {
+      const res = await app.inject({
+        method: 'DELETE',
+        url: `/api/project/${PROJECT_ID}/memory-items/purge?type=invalid_type`,
+        headers: { 'x-agent-key': API_KEY },
+      });
+
+      expect(res.statusCode).toBe(400);
     });
   });
 

@@ -3,7 +3,8 @@ import { prisma } from '../db/client.js';
 import { createChildLogger } from '../utils/logger.js';
 import { ErrorResponse } from '../schemas/index.js';
 import { updateMemoryItem, deleteMemoryItem } from '../services/memory-items.js';
-import { MemoryItemStatusSchema } from '../types/index.js';
+import { deleteDocument } from '../services/docs.js';
+import { MemoryItemStatusSchema, MemoryItemTypeSchema } from '../types/index.js';
 
 const logger = createChildLogger('routes:dashboard');
 
@@ -335,6 +336,135 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
       })),
       total: documents.length,
     });
+  });
+
+  // DELETE /api/documents/:id - Delete a document
+  app.delete('/api/documents/:id', {
+    schema: {
+      tags: ['Dashboard'],
+      summary: 'Delete a document and its chunks',
+      params: {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id'],
+      },
+    },
+  }, async (request: FastifyRequest<{
+    Params: { id: string };
+  }>, reply: FastifyReply) => {
+    const { id } = request.params;
+
+    try {
+      await deleteDocument(id);
+      return reply.send({ ok: true });
+    } catch (error) {
+      logger.error({ error, id }, 'Failed to delete document');
+      return reply.status(404).send({ error: 'Document not found' });
+    }
+  });
+
+  // POST /api/project/:id/memory-items/bulk - Bulk operations on memory items
+  app.post('/api/project/:id/memory-items/bulk', {
+    schema: {
+      tags: ['Dashboard'],
+      summary: 'Bulk update or delete memory items',
+      params: {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id'],
+      },
+      body: {
+        type: 'object',
+        required: ['action', 'ids'],
+        properties: {
+          action: { type: 'string', enum: ['accept', 'reject', 'delete'] },
+          ids: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{
+    Params: { id: string };
+    Body: { action: string; ids: string[] };
+  }>, reply: FastifyReply) => {
+    const { action, ids } = request.body;
+    let processed = 0;
+    const errors: string[] = [];
+
+    for (const id of ids) {
+      try {
+        if (action === 'delete') {
+          await deleteMemoryItem(id);
+        } else {
+          const status = action === 'accept' ? 'accepted' : 'rejected';
+          await updateMemoryItem(id, { status });
+        }
+        processed++;
+      } catch (error) {
+        errors.push(`${id}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    return reply.send({ processed, errors });
+  });
+
+  // DELETE /api/project/:id/memory-items/purge - Purge memory items by filter
+  app.delete('/api/project/:id/memory-items/purge', {
+    schema: {
+      tags: ['Dashboard'],
+      summary: 'Purge memory items by type and/or status',
+      params: {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id'],
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+          status: { type: 'string' },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{
+    Params: { id: string };
+    Querystring: { type?: string; status?: string };
+  }>, reply: FastifyReply) => {
+    const { id: projectId } = request.params;
+    const { type, status } = request.query;
+
+    if (!type && !status) {
+      return reply.status(400).send({ error: 'Must specify at least type or status filter' });
+    }
+
+    // Get matching items
+    const where: Record<string, unknown> = { projectId };
+    if (type) {
+      const parsed = MemoryItemTypeSchema.safeParse(type);
+      if (!parsed.success) return reply.status(400).send({ error: 'Invalid type' });
+      where.type = parsed.data;
+    }
+    if (status) {
+      const parsed = MemoryItemStatusSchema.safeParse(status);
+      if (!parsed.success) return reply.status(400).send({ error: 'Invalid status' });
+      where.status = parsed.data;
+    }
+
+    const items = await prisma.memoryItem.findMany({
+      where,
+      select: { id: true },
+    });
+
+    let deleted = 0;
+    for (const item of items) {
+      try {
+        await deleteMemoryItem(item.id);
+        deleted++;
+      } catch (error) {
+        logger.warn({ error, id: item.id }, 'Failed to purge memory item');
+      }
+    }
+
+    return reply.send({ deleted, total: items.length });
   });
 
   // GET /api/project/:id/tool-calls - List tool calls

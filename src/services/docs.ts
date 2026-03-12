@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { prisma } from '../db/client.js';
-import { storeFile, readStoredFile } from '../utils/storage.js';
+import { storeFile, readStoredFile, deleteStoredFile } from '../utils/storage.js';
 import { chunkText, extractText } from '../utils/chunking.js';
 import { getEmbeddingProvider } from '../providers/embeddings/index.js';
 import { ensureCollection, upsertPoints, deleteByDocumentId, QdrantPoint } from './qdrant.js';
@@ -134,6 +134,37 @@ async function indexDocument(
   });
 
   logger.info({ documentId, chunksCount: chunks.length }, 'Document indexed');
+}
+
+/**
+ * Delete a document, its chunks from Postgres, vectors from Qdrant, and file from storage.
+ */
+export async function deleteDocument(documentId: string): Promise<void> {
+  const document = await prisma.document.findUnique({
+    where: { id: documentId },
+  });
+
+  if (!document) {
+    throw new Error(`Document not found: ${documentId}`);
+  }
+
+  // Delete vectors from Qdrant
+  try {
+    await deleteByDocumentId(document.projectId, documentId);
+  } catch (error) {
+    logger.warn({ error, documentId }, 'Failed to delete Qdrant points for document');
+  }
+
+  // Delete chunks from Postgres
+  await prisma.kbChunk.deleteMany({ where: { documentId } });
+
+  // Delete file from storage
+  await deleteStoredFile(document.storagePath);
+
+  // Delete document record
+  await prisma.document.delete({ where: { id: documentId } });
+
+  logger.info({ documentId, filename: document.filename }, 'Document deleted');
 }
 
 export async function getDocumentText(documentId: string): Promise<string | null> {
