@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { assembleSystemPrompt, assembleUserPrompt } from '../src/services/prompts.js';
-import { RetrievedContext, ToolInput, MemoryItem } from '../src/types/index.js';
+import { assembleSystemPrompt, assembleUserPrompt, formatActivePlan } from '../src/services/prompts.js';
+import { RetrievedContext, ToolInput, MemoryItem, AgentPlan } from '../src/types/index.js';
 
 function makeEmptyContext(): RetrievedContext {
   return {
@@ -394,6 +394,111 @@ describe('Prompt Assembly', () => {
     it('should end with JSON instruction', () => {
       const prompt = assembleUserPrompt('Hello', makeEmptyContext());
       expect(prompt).toContain('Respond with ONLY valid JSON');
+    });
+  });
+
+  describe('Plan-and-Execute', () => {
+    describe('formatActivePlan', () => {
+      it('should format a basic plan with progress', () => {
+        const plan: AgentPlan = {
+          goal: 'Deploy new auth',
+          steps: [
+            { description: 'Review code', status: 'done' },
+            { description: 'Run tests', status: 'in_progress' },
+            { description: 'Deploy', status: 'pending' },
+          ],
+          current_step: 1,
+        };
+        const formatted = formatActivePlan(plan);
+        expect(formatted).toContain('ACTIVE PLAN');
+        expect(formatted).toContain('Deploy new auth');
+        expect(formatted).toContain('Step 2 of 3');
+        expect(formatted).toContain('✅ Review code');
+        expect(formatted).toContain('→ Run tests');
+        expect(formatted).toContain('○ Deploy');
+      });
+
+      it('should show skipped steps with marker', () => {
+        const plan: AgentPlan = {
+          goal: 'Test',
+          steps: [
+            { description: 'Step A', status: 'skipped' },
+            { description: 'Step B', status: 'pending' },
+          ],
+          current_step: 1,
+        };
+        const formatted = formatActivePlan(plan);
+        expect(formatted).toContain('⊘ Step A');
+      });
+    });
+
+    describe('assembleSystemPrompt with plan instructions', () => {
+      it('should include PLAN-AND-EXECUTE section', () => {
+        const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), []);
+        expect(prompt).toContain('PLAN-AND-EXECUTE');
+        expect(prompt).toContain('Maximum 10 steps');
+        expect(prompt).toContain('plan');
+      });
+
+      it('should include plan in response schema', () => {
+        const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), []);
+        expect(prompt).toContain('"plan"');
+        expect(prompt).toContain('"goal"');
+        expect(prompt).toContain('"steps"');
+        expect(prompt).toContain('"current_step"');
+      });
+
+      it('should instruct CRON mode to plan on first step', () => {
+        const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), [], 'cron');
+        expect(prompt).toContain('Plan first');
+        expect(prompt).toContain('FIRST step');
+      });
+    });
+
+    describe('assembleUserPrompt with active plan', () => {
+      it('should render active plan in user prompt', () => {
+        const plan: AgentPlan = {
+          goal: 'Audit project',
+          steps: [
+            { description: 'Check open loops', status: 'done' },
+            { description: 'Review findings', status: 'in_progress' },
+          ],
+          current_step: 1,
+        };
+        const prompt = assembleUserPrompt('Continue', makeEmptyContext(), plan);
+        expect(prompt).toContain('ACTIVE PLAN');
+        expect(prompt).toContain('Audit project');
+        expect(prompt).toContain('✅ Check open loops');
+        expect(prompt).toContain('→ Review findings');
+      });
+
+      it('should NOT render plan section when plan is null', () => {
+        const prompt = assembleUserPrompt('Hello', makeEmptyContext(), null);
+        expect(prompt).not.toContain('ACTIVE PLAN');
+      });
+
+      it('should NOT render plan section when plan is undefined', () => {
+        const prompt = assembleUserPrompt('Hello', makeEmptyContext());
+        expect(prompt).not.toContain('ACTIVE PLAN');
+      });
+
+      it('should render plan BEFORE other context sections', () => {
+        const context = makeEmptyContext();
+        context.kbChunks = [
+          { text: 'Some KB content', documentId: 'doc-1', category: 'FACTS', score: 0.9 },
+        ];
+        const plan: AgentPlan = {
+          goal: 'Test ordering',
+          steps: [{ description: 'Step 1', status: 'pending' }],
+          current_step: 0,
+        };
+        const prompt = assembleUserPrompt('test', context, plan);
+        const planIndex = prompt.indexOf('ACTIVE PLAN');
+        const kbIndex = prompt.indexOf('RELEVANT KNOWLEDGE BASE CONTEXT');
+        expect(planIndex).toBeGreaterThan(-1);
+        expect(kbIndex).toBeGreaterThan(-1);
+        expect(planIndex).toBeLessThan(kbIndex);
+      });
     });
   });
 });

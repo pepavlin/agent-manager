@@ -46,8 +46,19 @@ The core agent in `src/services/agent.ts` follows a strict decision loop:
 1. **ACT** - Request tool execution (stored in `tool_calls` table, executed by n8n)
 2. **ASK** - Ask clarifying question (default when uncertain)
 3. **NOOP** - Provide information without tools
+4. **CONTINUE** - Signal more work needed (with optional plan)
 
 All responses are **strict JSON** validated by Zod schemas in `src/types/index.ts`.
+
+### Plan-and-Execute Pattern
+
+For multi-step tasks, the agent can create an explicit plan:
+- Agent includes a `plan` object in its response: `{ goal, steps[], current_step }`
+- Plan is persisted on the thread (`activePlanJson` column) across CONTINUE/ACT turns
+- On subsequent calls, the active plan is rendered in the user prompt so the agent tracks progress
+- Agent updates step statuses (pending → in_progress → done/skipped) each turn
+- Plan is cleared by setting `plan: null` when complete
+- Maximum 10 steps per plan; CRON mode strongly encourages planning on first step
 
 ### Request Flow
 
@@ -202,7 +213,7 @@ Key tables in `prisma/schema.prisma`:
 - `projects` - Project with name + roleStatement
 - `documents` - Uploaded files (FACTS/RULES/STATE categories)
 - `kb_chunks` - Text chunks with Qdrant point references
-- `threads` / `messages` - Conversation history
+- `threads` / `messages` - Conversation history (threads have `activePlanJson` for plan persistence)
 - `tool_calls` - Pending/completed tool executions
 - `memory_items` - New unified memory system (facts, events, decisions, etc.)
 - `preferences` / `lessons` - Legacy memory system (write-through to memory_items)

@@ -31,11 +31,26 @@ export const ToolRequestSchema = z.object({
 });
 export type ToolRequest = z.infer<typeof ToolRequestSchema>;
 
+// Plan step schema (for Plan-and-Execute pattern)
+export const PlanStepSchema = z.object({
+  description: z.string(),
+  status: z.enum(['pending', 'in_progress', 'done', 'skipped']),
+});
+export type PlanStep = z.infer<typeof PlanStepSchema>;
+
+export const AgentPlanSchema = z.object({
+  goal: z.string().min(1),
+  steps: z.array(PlanStepSchema).min(1).max(10),
+  current_step: z.number().int().min(0),
+});
+export type AgentPlan = z.infer<typeof AgentPlanSchema>;
+
 // Agent response schema (model output)
 export const AgentResponseSchema = z.object({
   mode: AgentModeSchema,
   message: z.string(),
   tool_request: ToolRequestSchema.nullable().optional(),
+  plan: AgentPlanSchema.nullable().optional(),
 });
 export type AgentResponse = z.infer<typeof AgentResponseSchema>;
 
@@ -64,6 +79,8 @@ export interface ChatResponse {
   tool_auto_executed?: boolean;
   /** Result of the auto-executed tool — caller can pass it straight to POST /tools/result */
   tool_result?: { ok: boolean; data?: unknown; error?: string };
+  /** Active plan on the thread (null if no plan, undefined if unchanged) */
+  active_plan?: AgentPlan | null;
   render: {
     text_to_send_to_user: string;
   };

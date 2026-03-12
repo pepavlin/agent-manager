@@ -15,6 +15,7 @@ vi.mock('../src/db/client.js', () => {
     thread: {
       create: vi.fn(),
       findUnique: vi.fn(),
+      update: vi.fn(),
     },
     message: {
       create: vi.fn(),
@@ -119,6 +120,7 @@ const mockThread = {
   id: 'thread-1',
   projectId: 'proj-1',
   userId: 'user-1',
+  activePlanJson: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -126,6 +128,9 @@ const mockThread = {
 function setupBasicMocks() {
   vi.mocked(prisma.project.findUnique).mockResolvedValue(mockProject);
   vi.mocked(prisma.thread.create).mockResolvedValue(mockThread);
+  // Default: thread has no active plan
+  vi.mocked(prisma.thread.findUnique).mockResolvedValue({ activePlanJson: null } as never);
+  vi.mocked(prisma.thread.update).mockResolvedValue(mockThread as never);
   vi.mocked(prisma.message.create).mockResolvedValue({
     id: 'msg-1',
     threadId: 'thread-1',
@@ -642,6 +647,132 @@ describe('Agent Service', () => {
       const generateCallArgs = mockGenerateJSON.mock.calls[0][0];
       expect(generateCallArgs.system).toContain('memory.propose_add');
       expect(generateCallArgs.system).toContain('memory.propose_update');
+    });
+
+    it('should persist plan to thread when agent returns a plan', async () => {
+      const plan = {
+        goal: 'Review project',
+        steps: [
+          { description: 'Check open loops', status: 'in_progress' },
+          { description: 'Review findings', status: 'pending' },
+        ],
+        current_step: 0,
+      };
+
+      mockGenerateJSON.mockResolvedValueOnce(
+        JSON.stringify({
+          mode: 'CONTINUE',
+          message: 'Starting review',
+          tool_request: null,
+          plan,
+        })
+      );
+
+      const result = await processChat({
+        project_id: 'proj-1',
+        user_id: 'user-1',
+        message: 'Review the project',
+        tools: [],
+      });
+
+      expect(result.response_json.plan).toEqual(plan);
+      expect(result.active_plan).toEqual(plan);
+
+      // Thread should be updated with the plan
+      expect(vi.mocked(prisma.thread.update)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'thread-1' },
+          data: { activePlanJson: JSON.stringify(plan) },
+        })
+      );
+    });
+
+    it('should clear plan when agent returns plan: null', async () => {
+      mockGenerateJSON.mockResolvedValueOnce(
+        JSON.stringify({
+          mode: 'NOOP',
+          message: 'All done',
+          tool_request: null,
+          plan: null,
+        })
+      );
+
+      await processChat({
+        project_id: 'proj-1',
+        user_id: 'user-1',
+        message: 'Finished',
+        tools: [],
+      });
+
+      expect(vi.mocked(prisma.thread.update)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'thread-1' },
+          data: { activePlanJson: null },
+        })
+      );
+    });
+
+    it('should NOT update thread plan when agent omits plan field', async () => {
+      mockGenerateJSON.mockResolvedValueOnce(
+        JSON.stringify({
+          mode: 'NOOP',
+          message: 'Hi',
+          tool_request: null,
+        })
+      );
+
+      await processChat({
+        project_id: 'proj-1',
+        user_id: 'user-1',
+        message: 'Hello',
+        tools: [],
+      });
+
+      // thread.update should NOT be called for plan persistence
+      const updateCalls = vi.mocked(prisma.thread.update).mock.calls;
+      const planUpdateCalls = updateCalls.filter(
+        (call) => 'activePlanJson' in (call[0] as { data: Record<string, unknown> }).data
+      );
+      expect(planUpdateCalls).toHaveLength(0);
+    });
+
+    it('should load existing plan from thread and pass to prompt', async () => {
+      const existingPlan = {
+        goal: 'Ongoing review',
+        steps: [
+          { description: 'Step 1', status: 'done' },
+          { description: 'Step 2', status: 'in_progress' },
+        ],
+        current_step: 1,
+      };
+
+      // Return the existing plan from thread lookup
+      vi.mocked(prisma.thread.findUnique).mockResolvedValue({
+        activePlanJson: JSON.stringify(existingPlan),
+      } as never);
+
+      mockGenerateJSON.mockResolvedValueOnce(
+        JSON.stringify({
+          mode: 'NOOP',
+          message: 'Continuing',
+          tool_request: null,
+        })
+      );
+
+      await processChat({
+        project_id: 'proj-1',
+        user_id: 'user-1',
+        thread_id: 'thread-1',
+        message: 'Continue',
+        tools: [],
+      });
+
+      // The user prompt should contain the active plan
+      const generateCallArgs = mockGenerateJSON.mock.calls[0][0];
+      expect(generateCallArgs.user).toContain('ACTIVE PLAN');
+      expect(generateCallArgs.user).toContain('Ongoing review');
+      expect(generateCallArgs.user).toContain('✅ Step 1');
+      expect(generateCallArgs.user).toContain('→ Step 2');
     });
 
     it('should store audit log', async () => {

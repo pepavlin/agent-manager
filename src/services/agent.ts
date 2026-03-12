@@ -5,6 +5,8 @@ import { assembleSystemPrompt, assembleUserPrompt } from './prompts.js';
 import {
   AgentResponse,
   AgentResponseSchema,
+  AgentPlan,
+  AgentPlanSchema,
   ChatRequest,
   ChatResponse,
   ToolInput,
@@ -504,12 +506,29 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
     throw new NotFoundError('Project', project_id);
   }
 
+  // Load active plan from thread (if any)
+  let activePlan: AgentPlan | null = null;
+  {
+    const threadRow = await prisma.thread.findUnique({
+      where: { id: threadIdToUse },
+      select: { activePlanJson: true },
+    });
+    if (threadRow?.activePlanJson) {
+      try {
+        const parsed = AgentPlanSchema.safeParse(JSON.parse(threadRow.activePlanJson));
+        if (parsed.success) activePlan = parsed.data;
+      } catch {
+        logger.warn({ threadId: threadIdToUse }, 'Failed to parse active plan from thread');
+      }
+    }
+  }
+
   // Retrieve RAG context
   const ragContext = await retrieveContext(project_id, user_id, message, threadIdToUse);
 
   // Assemble prompts with all tools (including memory tools)
   const systemPrompt = assembleSystemPrompt(project.name, project.roleStatement, ragContext, allTools, requestContext?.source);
-  const userPrompt = assembleUserPrompt(message, ragContext);
+  const userPrompt = assembleUserPrompt(message, ragContext, activePlan);
 
   // Context size telemetry
   logger.info(
@@ -543,6 +562,16 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
 
   // Parse and validate response (gracefully falls back to ASK on bad/empty input)
   const agentResponse = parseAgentResponse(rawResponse);
+
+  // Persist plan to thread (plan field: undefined = keep existing, null = clear, object = update)
+  if (agentResponse.plan !== undefined) {
+    const planJson = agentResponse.plan ? JSON.stringify(agentResponse.plan) : null;
+    await prisma.thread.update({
+      where: { id: threadIdToUse },
+      data: { activePlanJson: planJson },
+    });
+    logger.debug({ threadId: threadIdToUse, hasPlan: !!agentResponse.plan }, 'Plan updated on thread');
+  }
 
   // Handle tool request
   let pendingToolCallId: string | undefined;
@@ -720,11 +749,15 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
 
   logger.info({ threadId: threadIdToUse, mode: agentResponse.mode }, 'Chat processed');
 
+  // Resolve the effective plan: if agent sent one, use it; otherwise use the pre-existing one
+  const effectivePlan = agentResponse.plan !== undefined ? agentResponse.plan : activePlan;
+
   return {
     thread_id: threadIdToUse,
     response_json: agentResponse,
     ...(pendingToolCallId && { tool_call_id: pendingToolCallId }),
     ...(autoExecutedResult && { tool_auto_executed: true, tool_result: autoExecutedResult }),
+    ...(effectivePlan !== null && effectivePlan !== undefined && { active_plan: effectivePlan }),
     render: {
       text_to_send_to_user: agentResponse.message,
     },

@@ -1,4 +1,4 @@
-import { RetrievedContext, ToolInput, MemoryItem } from '../types/index.js';
+import { RetrievedContext, ToolInput, MemoryItem, AgentPlan } from '../types/index.js';
 
 export const PROMPT_CORE = `You are a project manager AI assistant. You help manage projects by understanding context from documents, tracking decisions, and coordinating work.
 
@@ -14,8 +14,31 @@ You MUST respond with ONLY a valid JSON object. No markdown, no explanation, jus
     "args": { ... },
     "requires_approval": boolean,
     "risk": "low" | "medium" | "high"
+  },
+  "plan": null | {
+    "goal": "what you are trying to achieve",
+    "steps": [
+      { "description": "step description", "status": "pending" | "in_progress" | "done" | "skipped" }
+    ],
+    "current_step": 0
   }
 }
+
+## PLAN-AND-EXECUTE (Multi-Step Tasks)
+When a task requires multiple steps (2+ tool calls or CONTINUE turns), you SHOULD create a plan:
+
+1. **Create a plan** — Include a "plan" object in your response with a clear goal, ordered steps, and current_step=0
+2. **Execute step by step** — Each turn, execute the current step. Update step statuses as you go.
+3. **Adapt the plan** — If circumstances change, update the plan (add/remove/reorder steps, skip steps)
+4. **Complete** — When all steps are done or skipped, set plan to null
+
+### Plan rules:
+- Maximum 10 steps per plan — break large tasks into sub-goals if needed
+- Set the current step's status to "in_progress" when starting it, "done" when complete
+- If you omit "plan" from your response, the existing plan carries forward unchanged
+- Set "plan": null to explicitly clear a completed or abandoned plan
+- Plans are thread-scoped — they persist across CONTINUE calls within the same thread
+- In CRON mode, ALWAYS create a plan on your first step
 
 ## MEMORY LAYERS
 You have access to multiple memory layers:
@@ -148,10 +171,11 @@ You MUST choose exactly ONE mode per step:
 - Any write/create action must have requires_approval=true
 
 ## YOUR WORKFLOW
-1. **Assess** — Review open loops, recent events, project state, ideas, KB documents
-2. **Pick the highest-impact action** — What single thing would move the project forward most?
-3. **Execute it** — Use ACT to call a tool
-4. **Log what you did** — Use memory.propose_add (type=event) to record observations
+1. **Plan first** — On your FIRST step, create a plan with clear goal and steps. Include it in your response.
+2. **Assess** — Review open loops, recent events, project state, ideas, KB documents
+3. **Pick the highest-impact action** — What single thing would move the project forward most?
+4. **Execute it** — Use ACT to call a tool, updating your plan progress
+5. **Log what you did** — Use memory.propose_add (type=event) to record observations
 
 ## MULTI-STEP BEHAVIOR
 - You will be called repeatedly. Each call = one step.
@@ -198,6 +222,29 @@ function formatMemoryItem(item: MemoryItem): string {
     .join(', ');
   const status = item.status ? ` [${item.status}]` : '';
   return `- [${item.type}]${status} ${item.title}: ${contentStr}`;
+}
+
+export function formatActivePlan(plan: AgentPlan): string {
+  const lines: string[] = [];
+  lines.push(`## ACTIVE PLAN`);
+  lines.push(`Goal: ${plan.goal}`);
+  lines.push(`Progress: Step ${plan.current_step + 1} of ${plan.steps.length}`);
+  lines.push('');
+
+  for (let i = 0; i < plan.steps.length; i++) {
+    const step = plan.steps[i];
+    let marker: string;
+    if (step.status === 'done') marker = '✅';
+    else if (step.status === 'in_progress') marker = '→';
+    else if (step.status === 'skipped') marker = '⊘';
+    else marker = '○';
+    lines.push(`${i + 1}. ${marker} ${step.description}`);
+  }
+
+  lines.push('');
+  lines.push('Execute the current step. Update step statuses and current_step in your plan. Set plan to null when done.');
+
+  return lines.join('\n');
 }
 
 function formatSituationalPicture(context: RetrievedContext): string {
@@ -333,9 +380,15 @@ ${context.brief}`);
 
 export function assembleUserPrompt(
   userMessage: string,
-  context: RetrievedContext
+  context: RetrievedContext,
+  activePlan?: AgentPlan | null
 ): string {
   const parts: string[] = [];
+
+  // Active plan (rendered first so agent sees it prominently)
+  if (activePlan) {
+    parts.push(formatActivePlan(activePlan));
+  }
 
   // KB context chunks
   if (context.kbChunks.length > 0) {

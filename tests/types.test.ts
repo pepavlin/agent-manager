@@ -5,6 +5,8 @@ import {
   ToolInputSchema,
   ToolRequestSchema,
   AgentResponseSchema,
+  AgentPlanSchema,
+  PlanStepSchema,
   ChatRequestSchema,
   CreateProjectSchema,
   DocumentCategorySchema,
@@ -106,6 +108,77 @@ describe('Zod Schema Validation', () => {
     });
   });
 
+  describe('PlanStepSchema', () => {
+    it('should accept valid step', () => {
+      const result = PlanStepSchema.parse({ description: 'Do something', status: 'pending' });
+      expect(result.description).toBe('Do something');
+      expect(result.status).toBe('pending');
+    });
+
+    it('should accept all valid statuses', () => {
+      for (const status of ['pending', 'in_progress', 'done', 'skipped']) {
+        expect(PlanStepSchema.parse({ description: 'step', status }).status).toBe(status);
+      }
+    });
+
+    it('should reject invalid status', () => {
+      expect(() => PlanStepSchema.parse({ description: 'step', status: 'cancelled' })).toThrow();
+    });
+  });
+
+  describe('AgentPlanSchema', () => {
+    it('should accept valid plan', () => {
+      const result = AgentPlanSchema.parse({
+        goal: 'Deploy new feature',
+        steps: [
+          { description: 'Review code', status: 'done' },
+          { description: 'Run tests', status: 'in_progress' },
+          { description: 'Deploy', status: 'pending' },
+        ],
+        current_step: 1,
+      });
+      expect(result.goal).toBe('Deploy new feature');
+      expect(result.steps).toHaveLength(3);
+      expect(result.current_step).toBe(1);
+    });
+
+    it('should reject empty goal', () => {
+      expect(() => AgentPlanSchema.parse({
+        goal: '',
+        steps: [{ description: 'step', status: 'pending' }],
+        current_step: 0,
+      })).toThrow();
+    });
+
+    it('should reject empty steps', () => {
+      expect(() => AgentPlanSchema.parse({
+        goal: 'Do something',
+        steps: [],
+        current_step: 0,
+      })).toThrow();
+    });
+
+    it('should reject more than 10 steps', () => {
+      const steps = Array.from({ length: 11 }, (_, i) => ({
+        description: `Step ${i}`,
+        status: 'pending' as const,
+      }));
+      expect(() => AgentPlanSchema.parse({
+        goal: 'Too many steps',
+        steps,
+        current_step: 0,
+      })).toThrow();
+    });
+
+    it('should reject negative current_step', () => {
+      expect(() => AgentPlanSchema.parse({
+        goal: 'Test',
+        steps: [{ description: 'step', status: 'pending' }],
+        current_step: -1,
+      })).toThrow();
+    });
+  });
+
   describe('AgentResponseSchema', () => {
     it('should accept NOOP response', () => {
       const result = AgentResponseSchema.parse({
@@ -138,6 +211,41 @@ describe('Zod Schema Validation', () => {
         message: 'What project?',
       });
       expect(result.mode).toBe('ASK');
+    });
+
+    it('should accept response with plan', () => {
+      const result = AgentResponseSchema.parse({
+        mode: 'CONTINUE',
+        message: 'Starting multi-step task',
+        tool_request: null,
+        plan: {
+          goal: 'Review and deploy',
+          steps: [
+            { description: 'Review code', status: 'in_progress' },
+            { description: 'Deploy', status: 'pending' },
+          ],
+          current_step: 0,
+        },
+      });
+      expect(result.plan?.goal).toBe('Review and deploy');
+      expect(result.plan?.steps).toHaveLength(2);
+    });
+
+    it('should accept response with null plan (clear plan)', () => {
+      const result = AgentResponseSchema.parse({
+        mode: 'NOOP',
+        message: 'Done',
+        plan: null,
+      });
+      expect(result.plan).toBeNull();
+    });
+
+    it('should accept response without plan field (plan unchanged)', () => {
+      const result = AgentResponseSchema.parse({
+        mode: 'NOOP',
+        message: 'test',
+      });
+      expect(result.plan).toBeUndefined();
     });
 
     it('should not have memory_updates field', () => {
