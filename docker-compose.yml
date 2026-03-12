@@ -15,7 +15,7 @@ services:
       - DATABASE_URL=postgresql://agent:agent_password@postgres:5432/agent_manager
       - QDRANT_URL=http://qdrant:6333
       - CHAT_PROVIDER=${CHAT_PROVIDER:-claude_cli}
-      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-ollama}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_CHAT_MODEL=${OPENAI_CHAT_MODEL:-gpt-4o}
       - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
@@ -29,7 +29,7 @@ services:
       - CLAUDE_OAUTH_REFRESH_TOKEN=${CLAUDE_OAUTH_REFRESH_TOKEN}
       - OLLAMA_BASE_URL=http://ollama:11434
       - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
-      - EMBEDDING_DIMS=${EMBEDDING_DIMS:-3072}
+      - EMBEDDING_DIMS=${EMBEDDING_DIMS:-768}
       - STORAGE_PATH=/app/data/uploads
       - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-50}
       - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-100}
@@ -44,6 +44,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      ollama:
+        condition: service_started
     restart: unless-stopped
     networks:
       - agent-network
@@ -83,15 +85,18 @@ services:
     networks:
       - agent-network
 
-  # Optional: Ollama for local embeddings
+  # Ollama for local embeddings (default embedding provider)
   ollama:
     image: ollama/ollama:latest
     ports:
       - "11434:11434"
     volumes:
       - ollama-data:/root/.ollama
-    profiles:
-      - local
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
     networks:
       - agent-network
