@@ -62,6 +62,9 @@ import {
   purgeExpiredItems,
   createEvent,
   createMetric,
+  calculateCompositeScore,
+  findDuplicate,
+  MEMORY_TYPE_WEIGHTS,
 } from '../src/services/memory-items.js';
 import { prisma } from '../src/db/client.js';
 import { upsertMemoryPoints, deleteMemoryPoint, searchMemory } from '../src/services/qdrant.js';
@@ -429,7 +432,9 @@ describe('Memory Items Service', () => {
 
       const result = await searchMemoryItems('proj-1', 'What language?', 10);
       expect(result).toHaveLength(1);
-      expect(result[0].score).toBe(0.95);
+      // Memory v2: score is now composite (semantic × recency × type_weight × confidence)
+      expect(result[0].score).toBeLessThanOrEqual(0.95);
+      expect(result[0].score).toBeGreaterThan(0);
       expect(result[0].id).toBe('mi-1');
     });
 
@@ -623,6 +628,288 @@ describe('Memory Items Service', () => {
           }),
         })
       );
+    });
+  });
+
+  // ── Memory v2 Tests ──
+
+  describe('calculateCompositeScore', () => {
+    it('should weight rules higher than events', () => {
+      const now = new Date();
+      const ruleScore = calculateCompositeScore(0.9, {
+        type: 'rule', confidence: 0.8, createdAt: now,
+      });
+      const eventScore = calculateCompositeScore(0.9, {
+        type: 'event', confidence: 0.8, createdAt: now,
+      });
+      expect(ruleScore).toBeGreaterThan(eventScore);
+    });
+
+    it('should decay old items more than fresh ones', () => {
+      const now = new Date();
+      const oldDate = new Date(Date.now() - 30 * 24 * 3600 * 1000); // 30 days ago
+
+      const freshScore = calculateCompositeScore(0.9, {
+        type: 'fact', confidence: 0.8, createdAt: now,
+      });
+      const oldScore = calculateCompositeScore(0.9, {
+        type: 'fact', confidence: 0.8, createdAt: oldDate,
+      });
+      expect(freshScore).toBeGreaterThan(oldScore);
+    });
+
+    it('should respect confidence multiplier', () => {
+      const now = new Date();
+      const highConfScore = calculateCompositeScore(0.9, {
+        type: 'fact', confidence: 1.0, createdAt: now,
+      });
+      const lowConfScore = calculateCompositeScore(0.9, {
+        type: 'fact', confidence: 0.3, createdAt: now,
+      });
+      expect(highConfScore).toBeGreaterThan(lowConfScore);
+    });
+
+    it('should have minimum recency factor of 0.3', () => {
+      const veryOldDate = new Date(Date.now() - 500 * 24 * 3600 * 1000); // 500 days ago
+      const score = calculateCompositeScore(1.0, {
+        type: 'fact', confidence: 1.0, createdAt: veryOldDate,
+      });
+      // recency min 0.3 × type 0.85 × confidence 1.0 × semantic 1.0 = 0.255
+      expect(score).toBeGreaterThanOrEqual(0.25);
+    });
+
+    it('should have correct type weights', () => {
+      expect(MEMORY_TYPE_WEIGHTS.rule).toBe(1.0);
+      expect(MEMORY_TYPE_WEIGHTS.fact).toBe(0.85);
+      expect(MEMORY_TYPE_WEIGHTS.event).toBe(0.5);
+      expect(MEMORY_TYPE_WEIGHTS.lesson).toBe(0.7);
+    });
+  });
+
+  describe('findDuplicate (write gate)', () => {
+    it('should return null when no similar items exist', async () => {
+      vi.mocked(searchMemory).mockResolvedValue([]);
+
+      const result = await findDuplicate('proj-1', 'fact', new Array(384).fill(0.1));
+      expect(result).toBeNull();
+    });
+
+    it('should return duplicate when similarity exceeds threshold', async () => {
+      vi.mocked(searchMemory).mockResolvedValue([{
+        id: 'qp-1',
+        score: 0.90, // above 0.85 threshold
+        payload: {
+          memory_item_id: 'mi-1',
+          type: 'fact',
+          title: 'Test fact',
+          content_text: 'key: value',
+          status: 'accepted',
+          created_at: new Date().toISOString(),
+          expires_at: null,
+          user_id: 'user-1',
+        },
+      }]);
+      vi.mocked(prisma.memoryItem.findUnique).mockResolvedValue(baseMockItem as never);
+
+      const result = await findDuplicate('proj-1', 'fact', new Array(384).fill(0.1));
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('mi-1');
+      expect(result!.score).toBe(0.90);
+    });
+
+    it('should return null when similarity is below threshold', async () => {
+      vi.mocked(searchMemory).mockResolvedValue([{
+        id: 'qp-1',
+        score: 0.70, // below 0.85 threshold
+        payload: {
+          memory_item_id: 'mi-1',
+          type: 'fact',
+          title: 'Different fact',
+          content_text: 'different: content',
+          status: 'accepted',
+          created_at: new Date().toISOString(),
+          expires_at: null,
+          user_id: 'user-1',
+        },
+      }]);
+
+      const result = await findDuplicate('proj-1', 'fact', new Array(384).fill(0.1));
+      expect(result).toBeNull();
+    });
+
+    it('should handle search errors gracefully', async () => {
+      vi.mocked(searchMemory).mockRejectedValue(new Error('Qdrant error'));
+
+      const result = await findDuplicate('proj-1', 'fact', new Array(384).fill(0.1));
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('auto-TTL', () => {
+    it('should apply default TTL to events (7 days)', async () => {
+      vi.mocked(prisma.memoryItem.create).mockResolvedValue({
+        ...baseMockItem,
+        type: 'event',
+        status: 'accepted',
+        expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      } as never);
+
+      await createEvent('proj-1', 'Test event', { info: 'test' });
+
+      const createCall = vi.mocked(prisma.memoryItem.create).mock.calls[0][0] as Record<string, unknown>;
+      const data = createCall.data as Record<string, unknown>;
+      const expiresAt = data.expiresAt as Date;
+      expect(expiresAt).toBeDefined();
+      // Should expire roughly 7 days from now
+      const diffMs = expiresAt.getTime() - Date.now();
+      const diffDays = diffMs / (1000 * 3600 * 24);
+      expect(diffDays).toBeGreaterThan(6.9);
+      expect(diffDays).toBeLessThan(7.1);
+    });
+
+    it('should NOT apply TTL to facts (permanent)', async () => {
+      vi.mocked(prisma.memoryItem.create).mockResolvedValue(baseMockItem as never);
+
+      await createMemoryItem({
+        projectId: 'proj-1',
+        type: 'fact',
+        title: 'A fact',
+        content: { info: 'permanent' },
+        tags: [],
+      });
+
+      const createCall = vi.mocked(prisma.memoryItem.create).mock.calls[0][0] as Record<string, unknown>;
+      const data = createCall.data as Record<string, unknown>;
+      expect(data.expiresAt).toBeUndefined();
+    });
+
+    it('should NOT apply TTL to rules (permanent)', async () => {
+      vi.mocked(prisma.memoryItem.create).mockResolvedValue({
+        ...baseMockItem, type: 'rule',
+      } as never);
+
+      await createMemoryItem({
+        projectId: 'proj-1',
+        type: 'rule',
+        title: 'A rule',
+        content: { text: 'always do X' },
+        tags: [],
+      });
+
+      const createCall = vi.mocked(prisma.memoryItem.create).mock.calls[0][0] as Record<string, unknown>;
+      const data = createCall.data as Record<string, unknown>;
+      expect(data.expiresAt).toBeUndefined();
+    });
+
+    it('should NOT apply TTL to decisions (permanent)', async () => {
+      vi.mocked(prisma.memoryItem.create).mockResolvedValue({
+        ...baseMockItem, type: 'decision',
+      } as never);
+
+      await createMemoryItem({
+        projectId: 'proj-1',
+        type: 'decision',
+        title: 'A decision',
+        content: { text: 'use X' },
+        tags: [],
+      });
+
+      const createCall = vi.mocked(prisma.memoryItem.create).mock.calls[0][0] as Record<string, unknown>;
+      const data = createCall.data as Record<string, unknown>;
+      expect(data.expiresAt).toBeUndefined();
+    });
+
+    it('should preserve explicit expiresAt over default TTL', async () => {
+      const customExpiry = new Date(Date.now() + 1000 * 3600); // 1 hour
+      vi.mocked(prisma.memoryItem.create).mockResolvedValue({
+        ...baseMockItem,
+        type: 'event',
+        expiresAt: customExpiry,
+      } as never);
+
+      await createMemoryItem({
+        projectId: 'proj-1',
+        type: 'event',
+        title: 'Short-lived event',
+        content: { info: 'test' },
+        expiresAt: customExpiry,
+        tags: [],
+      });
+
+      const createCall = vi.mocked(prisma.memoryItem.create).mock.calls[0][0] as Record<string, unknown>;
+      const data = createCall.data as Record<string, unknown>;
+      expect(data.expiresAt).toBe(customExpiry);
+    });
+  });
+
+  describe('write gate integration', () => {
+    it('should skip duplicate check for events (append-only)', async () => {
+      vi.mocked(prisma.memoryItem.create).mockResolvedValue({
+        ...baseMockItem, type: 'event', status: 'accepted',
+      } as never);
+
+      await createEvent('proj-1', 'Same event', { info: 'test' });
+
+      // searchMemory should NOT be called (write gate skipped for events)
+      expect(vi.mocked(searchMemory)).not.toHaveBeenCalled();
+    });
+
+    it('should skip duplicate check for metrics', async () => {
+      vi.mocked(prisma.memoryItem.create).mockResolvedValue({
+        ...baseMockItem, type: 'metric', status: 'accepted',
+      } as never);
+
+      await createMetric('proj-1', 'Response time', { value: 200 }, 3600);
+
+      expect(vi.mocked(searchMemory)).not.toHaveBeenCalled();
+    });
+
+    it('should update existing fact instead of creating duplicate', async () => {
+      // Write gate finds a duplicate
+      vi.mocked(searchMemory).mockResolvedValue([{
+        id: 'qp-1',
+        score: 0.92,
+        payload: {
+          memory_item_id: 'mi-existing',
+          type: 'fact',
+          title: 'Project language',
+          content_text: 'language: Python',
+          status: 'accepted',
+          created_at: new Date().toISOString(),
+          expires_at: null,
+          user_id: 'user-1',
+        },
+      }]);
+
+      const existingItem = {
+        ...baseMockItem,
+        id: 'mi-existing',
+        type: 'fact',
+        title: 'Project language',
+        content: { language: 'Python' },
+        status: 'accepted',
+        tags: ['lang'],
+      };
+
+      vi.mocked(prisma.memoryItem.findUnique).mockResolvedValue(existingItem as never);
+      vi.mocked(prisma.memoryItem.update).mockResolvedValue({
+        ...existingItem,
+        title: 'Project language updated',
+        content: { language: 'Python', version: '3.12' },
+      } as never);
+
+      const result = await createMemoryItem({
+        projectId: 'proj-1',
+        type: 'fact',
+        title: 'Project language updated',
+        content: { language: 'Python', version: '3.12' },
+        tags: ['version'],
+      });
+
+      // Should have called update (not create)
+      expect(vi.mocked(prisma.memoryItem.update)).toHaveBeenCalled();
+      // Create should NOT have been called (duplicate was found)
+      expect(vi.mocked(prisma.memoryItem.create)).not.toHaveBeenCalled();
     });
   });
 

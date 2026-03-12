@@ -34,7 +34,7 @@ const logger = createChildLogger('agent');
 const MEMORY_TOOLS: ToolInput[] = [
   {
     name: 'memory.propose_add',
-    description: 'Propose adding a new memory item (fact, decision, open_loop, idea, event, metric). Events and metrics with TTL are auto-approved.',
+    description: 'Propose adding a new memory item (fact, decision, open_loop, idea, event, metric). Auto-TTL applied by type (events=7d, ideas=30d, lessons=90d). Duplicates auto-detected and merged. Do NOT store single tool failures.',
     parameters: {
       type: {
         type: 'string',
@@ -828,21 +828,24 @@ export async function processToolResult(
     },
   });
 
-  // Log tool result event in memory
-  try {
-    await createEvent(
-      projectId,
-      `Tool ${toolCall.name} ${ok ? 'succeeded' : 'failed'}`,
-      {
-        tool_name: toolCall.name,
-        ok,
-        data: ok ? data : undefined,
-        error: ok ? undefined : error,
-      },
-      { source: 'tool_result' }
-    );
-  } catch (err) {
-    logger.warn({ err, toolCallId }, 'Failed to log tool result event');
+  // Memory v2: Only log tool results as events for successful tool calls.
+  // Failures are already tracked in tool_calls table and should NOT pollute
+  // the memory system (prevents negativity bias / tool avoidance).
+  if (ok) {
+    try {
+      await createEvent(
+        projectId,
+        `Tool ${toolCall.name} completed`,
+        {
+          tool_name: toolCall.name,
+          ok: true,
+          data,
+        },
+        { source: 'tool_result' }
+      );
+    } catch (err) {
+      logger.warn({ err, toolCallId }, 'Failed to log tool result event');
+    }
   }
 
   // Audit log
@@ -880,16 +883,12 @@ export async function processToolResult(
   }
 
   // Automatically call processChat so the agent can respond to the tool result
-  // Skip reflection for memory/manager tools to avoid recursive self-reflection loops
-  const isMemoryToolResult = toolCall.name.startsWith('memory.') || toolCall.name.startsWith('manager.');
-  const reflectionSuffix = isMemoryToolResult
-    ? ''
-    : ok
-      ? '\n\n[REFLECTION]: Consider what you learned from this outcome. If there is a reusable lesson or rule (e.g. "always do X before Y", "tool Z requires parameter W"), store it using memory.propose_add with type="rule" or type="lesson".'
-      : '\n\n[REFLECTION]: Analyze why this failed. If there is a lesson or rule to prevent this in the future (e.g. "always validate X before calling Y"), store it using memory.propose_add with type="rule" or type="lesson".';
+  // Memory v2: Removed REFLECTION suffix that encouraged storing tool failures as
+  // permanent lessons/rules, causing negativity bias and tool avoidance.
+  // Tool failures are transient — they should NOT become permanent memory.
   const resultSummary = ok
-    ? `Tool "${toolCall.name}" completed successfully. Result: ${truncateForContext(data)}${reflectionSuffix}`
-    : `Tool "${toolCall.name}" failed. Error: ${error || 'Unknown error'}${reflectionSuffix}`;
+    ? `Tool "${toolCall.name}" completed successfully. Result: ${truncateForContext(data)}`
+    : `Tool "${toolCall.name}" failed. Error: ${error || 'Unknown error'}. This is likely a transient issue — try again or use an alternative approach.`;
 
   const chatResponse = await processChat({
     project_id: projectId,

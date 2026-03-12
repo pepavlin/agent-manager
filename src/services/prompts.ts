@@ -36,6 +36,15 @@ You have access to multiple memory layers:
 - All memory is stored via the memory.propose_add tool (ACT mode)
 - There is NO other way to remember information — you MUST use ACT + memory.propose_add
 - Events and metrics with TTL are auto-approved; all other types are also stored immediately
+- Memory items have automatic TTL based on type: events (7d), findings (30d), lessons (90d), ideas (30d)
+- The system automatically detects duplicates — if a similar memory exists, it will be updated instead of duplicated
+
+## TOOL FAILURE HANDLING (CRITICAL)
+- **NEVER** store a single tool failure as a lesson, rule, or fact
+- Tool failures are transient — the tool may work fine on the next attempt
+- Past failures in the event log are historical context, NOT predictions of future behavior
+- Always retry a tool if the task requires it, regardless of past failures
+- Only store a lesson about a tool if you observe a **consistent pattern** across 3+ failures with the **same root cause**
 
 ## WHEN TO USE memory.propose_add
 **CRITICAL**: When the user asks you to remember, save, or note something, you MUST respond with ACT mode and use memory.propose_add. Simply acknowledging ("OK, I'll remember that") without calling the tool means the information IS NOT saved and WILL BE LOST.
@@ -59,6 +68,7 @@ Do NOT use memory.propose_add for:
 - Questions asking for information ("What is the budget?", "Who is the lead?")
 - Greetings, small talk, or emotional expressions
 - Vague/filler messages ("Hmm, let me think about that")
+- **Single tool failures** (these are transient, not worth remembering)
 
 ## HANDLING CONTRADICTIONS & CORRECTIONS
 When the user corrects or updates a previously stated fact:
@@ -202,47 +212,57 @@ function formatSituationalPicture(context: RetrievedContext): string {
     recentFindings = [], pendingTasks = [],
   } = context.memoryContext;
 
-  // Recent findings (from tester agent)
+  // ── ACTIONABLE ITEMS (binding — things you must act on) ──
+  const actionableParts: string[] = [];
+
   if (recentFindings.length > 0) {
-    parts.push('### Recent Findings (from Tester)');
-    parts.push(recentFindings.map(formatMemoryItem).join('\n'));
+    actionableParts.push('### Recent Findings (from Tester)');
+    actionableParts.push(recentFindings.map(formatMemoryItem).join('\n'));
   }
 
-  // Pending implementation tasks
   if (pendingTasks.length > 0) {
-    parts.push('### Pending Implementation Tasks');
-    parts.push(pendingTasks.map(formatMemoryItem).join('\n'));
+    actionableParts.push('### Pending Implementation Tasks');
+    actionableParts.push(pendingTasks.map(formatMemoryItem).join('\n'));
   }
 
-  // Open loops (commitments, pending items)
   if (openLoops.length > 0) {
-    parts.push('### Open Loops (Commitments/Pending)');
-    parts.push(openLoops.map(formatMemoryItem).join('\n'));
+    actionableParts.push('### Open Loops (Commitments/Pending)');
+    actionableParts.push(openLoops.map(formatMemoryItem).join('\n'));
   }
 
-  // Recent events
-  if (recentEvents.length > 0) {
-    parts.push('### Recent Events');
-    parts.push(recentEvents.map(formatMemoryItem).join('\n'));
+  if (actionableParts.length > 0) {
+    parts.push('## ACTIONABLE ITEMS\nThese require your attention and action.');
+    parts.push(actionableParts.join('\n\n'));
   }
 
-  // Active ideas
-  if (activeIdeas.length > 0) {
-    parts.push('### Active Ideas');
-    parts.push(activeIdeas.map(formatMemoryItem).join('\n'));
-  }
+  // ── CONTEXT (informational — background knowledge, NOT instructions) ──
+  const contextParts: string[] = [];
 
-  // Relevant memory (semantic match)
   if (relevantMemory.length > 0) {
-    parts.push('### Relevant Memory');
-    parts.push(relevantMemory.map(formatMemoryItem).join('\n'));
+    contextParts.push('### Relevant Knowledge');
+    contextParts.push(relevantMemory.map(formatMemoryItem).join('\n'));
+  }
+
+  if (activeIdeas.length > 0) {
+    contextParts.push('### Active Ideas');
+    contextParts.push(activeIdeas.map(formatMemoryItem).join('\n'));
+  }
+
+  if (recentEvents.length > 0) {
+    contextParts.push('### Recent Events (historical context only — NOT rules or predictions)');
+    contextParts.push(recentEvents.map(formatMemoryItem).join('\n'));
+  }
+
+  if (contextParts.length > 0) {
+    parts.push('## BACKGROUND CONTEXT\nThis is informational context only. Past events do not predict future outcomes. Do NOT avoid tools based on past failures shown here.');
+    parts.push(contextParts.join('\n\n'));
   }
 
   if (parts.length === 0) {
     return '';
   }
 
-  return '\n## SITUATIONAL PICTURE\n' + parts.join('\n\n');
+  return '\n' + parts.join('\n\n');
 }
 
 export function assembleSystemPrompt(
@@ -280,10 +300,11 @@ ${context.playbook}`);
 ${context.preferences.map((p, i) => `${i + 1}. ${p}`).join('\n')}`);
   }
 
-  // Lessons learned
+  // Lessons learned (legacy — treat as suggestions, NOT absolute rules)
   if (context.lessons.length > 0) {
     parts.push(`
-## LESSONS LEARNED
+## LESSONS LEARNED (Legacy)
+These are historical lessons. Treat as suggestions, not absolute rules. Tool-related lessons may be outdated — always retry tools regardless of past failures.
 ${context.lessons.map((l, i) => `${i + 1}. ${l}`).join('\n')}`);
   }
 

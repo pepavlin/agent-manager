@@ -195,6 +195,25 @@ describe('Prompt Assembly', () => {
       const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), []);
       expect(prompt).toContain('There is NO other way to remember information');
     });
+
+    it('should include anti-bias tool failure handling rules', () => {
+      const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), []);
+      expect(prompt).toContain('TOOL FAILURE HANDLING');
+      expect(prompt).toContain('NEVER');
+      expect(prompt).toContain('store a single tool failure as a lesson');
+      expect(prompt).toContain('Tool failures are transient');
+    });
+
+    it('should include auto-TTL information', () => {
+      const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), []);
+      expect(prompt).toContain('automatic TTL');
+      expect(prompt).toContain('events (7d)');
+    });
+
+    it('should include duplicate detection note', () => {
+      const prompt = assembleSystemPrompt('Test', 'Test', makeEmptyContext(), []);
+      expect(prompt).toContain('automatically detects duplicates');
+    });
   });
 
   describe('assembleUserPrompt', () => {
@@ -239,7 +258,7 @@ describe('Prompt Assembly', () => {
       expect(prompt).toContain('ASSISTANT: Previous answer');
     });
 
-    it('should include situational picture with open loops', () => {
+    it('should include actionable items with open loops', () => {
       const context = makeEmptyContext();
       context.memoryContext = {
         openLoops: [makeMemoryItem({ type: 'open_loop', title: 'Fix login bug', status: 'active' })],
@@ -250,12 +269,12 @@ describe('Prompt Assembly', () => {
         pendingTasks: [],
       };
       const prompt = assembleUserPrompt('status?', context);
-      expect(prompt).toContain('SITUATIONAL PICTURE');
+      expect(prompt).toContain('ACTIONABLE ITEMS');
       expect(prompt).toContain('Open Loops');
       expect(prompt).toContain('Fix login bug');
     });
 
-    it('should include situational picture with recent events', () => {
+    it('should include background context with recent events', () => {
       const context = makeEmptyContext();
       context.memoryContext = {
         openLoops: [],
@@ -266,11 +285,14 @@ describe('Prompt Assembly', () => {
         pendingTasks: [],
       };
       const prompt = assembleUserPrompt('test', context);
+      expect(prompt).toContain('BACKGROUND CONTEXT');
       expect(prompt).toContain('Recent Events');
       expect(prompt).toContain('Deployed v1.2');
+      // Memory v2: events should be marked as historical only
+      expect(prompt).toContain('historical context only');
     });
 
-    it('should include situational picture with active ideas', () => {
+    it('should include background context with active ideas', () => {
       const context = makeEmptyContext();
       context.memoryContext = {
         openLoops: [],
@@ -281,11 +303,12 @@ describe('Prompt Assembly', () => {
         pendingTasks: [],
       };
       const prompt = assembleUserPrompt('test', context);
+      expect(prompt).toContain('BACKGROUND CONTEXT');
       expect(prompt).toContain('Active Ideas');
       expect(prompt).toContain('Add dark mode');
     });
 
-    it('should include situational picture with relevant memory', () => {
+    it('should include relevant knowledge in background context', () => {
       const context = makeEmptyContext();
       context.memoryContext = {
         openLoops: [],
@@ -296,11 +319,12 @@ describe('Prompt Assembly', () => {
         pendingTasks: [],
       };
       const prompt = assembleUserPrompt('test', context);
-      expect(prompt).toContain('Relevant Memory');
+      expect(prompt).toContain('BACKGROUND CONTEXT');
+      expect(prompt).toContain('Relevant Knowledge');
       expect(prompt).toContain('Use Kubernetes');
     });
 
-    it('should omit situational picture when all empty', () => {
+    it('should omit sections when all memory context empty', () => {
       const context = makeEmptyContext();
       context.memoryContext = {
         openLoops: [],
@@ -311,10 +335,11 @@ describe('Prompt Assembly', () => {
         pendingTasks: [],
       };
       const prompt = assembleUserPrompt('test', context);
-      expect(prompt).not.toContain('SITUATIONAL PICTURE');
+      expect(prompt).not.toContain('ACTIONABLE ITEMS');
+      expect(prompt).not.toContain('BACKGROUND CONTEXT');
     });
 
-    it('should include situational picture with recent findings', () => {
+    it('should include recent findings in actionable items', () => {
       const context = makeEmptyContext();
       context.memoryContext = {
         openLoops: [],
@@ -325,11 +350,12 @@ describe('Prompt Assembly', () => {
         pendingTasks: [],
       };
       const prompt = assembleUserPrompt('test', context);
+      expect(prompt).toContain('ACTIONABLE ITEMS');
       expect(prompt).toContain('Recent Findings');
       expect(prompt).toContain('Broken mobile nav');
     });
 
-    it('should include situational picture with pending tasks', () => {
+    it('should include pending tasks in actionable items', () => {
       const context = makeEmptyContext();
       context.memoryContext = {
         openLoops: [],
@@ -340,13 +366,29 @@ describe('Prompt Assembly', () => {
         pendingTasks: [makeMemoryItem({ type: 'impl_task', title: 'Fix responsive layout' })],
       };
       const prompt = assembleUserPrompt('test', context);
+      expect(prompt).toContain('ACTIONABLE ITEMS');
       expect(prompt).toContain('Pending Implementation Tasks');
       expect(prompt).toContain('Fix responsive layout');
     });
 
-    it('should omit situational picture when memoryContext is undefined', () => {
+    it('should omit sections when memoryContext is undefined', () => {
       const prompt = assembleUserPrompt('test', makeEmptyContext());
-      expect(prompt).not.toContain('SITUATIONAL PICTURE');
+      expect(prompt).not.toContain('ACTIONABLE ITEMS');
+      expect(prompt).not.toContain('BACKGROUND CONTEXT');
+    });
+
+    it('should include anti-bias disclaimer for events', () => {
+      const context = makeEmptyContext();
+      context.memoryContext = {
+        openLoops: [],
+        recentEvents: [makeMemoryItem({ type: 'event', title: 'Tool failed' })],
+        activeIdeas: [],
+        relevantMemory: [],
+        recentFindings: [],
+        pendingTasks: [],
+      };
+      const prompt = assembleUserPrompt('test', context);
+      expect(prompt).toContain('Do NOT avoid tools based on past failures');
     });
 
     it('should end with JSON instruction', () => {

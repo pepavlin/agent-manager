@@ -129,19 +129,19 @@ The memory system supports multiple layers of memory with different purposes:
 #### Layer 2: Memory Items
 Stored in `memory_items` table with Qdrant collection `mem_<projectId>`:
 
-| Type | Description | Auto-Approve |
-|------|-------------|--------------|
-| `fact` | Learned project facts | No |
-| `rule` | User-defined rules | No |
-| `decision` | Agreed-upon choices | No |
-| `open_loop` | Commitments, pending items | No |
-| `idea` | Proposed improvements | No |
-| `event` | What happened (append-only log) | Yes |
-| `metric` | Time-limited measurements | Yes (with TTL) |
-| `preference` | User preferences (legacy compat) | No |
-| `lesson` | Learned outcomes (legacy compat) | No |
-| `finding` | Tester findings (bugs, UX issues, etc.) | Yes (via manager.log_finding) |
-| `impl_task` | Implementation tasks for implementer | Yes (via manager.create_task) |
+| Type | Description | Auto-Approve | Default TTL | Type Weight |
+|------|-------------|--------------|-------------|-------------|
+| `fact` | Learned project facts | No | ∞ (permanent) | 0.85 |
+| `rule` | User-defined rules | No | ∞ (permanent) | 1.0 |
+| `decision` | Agreed-upon choices | No | ∞ (permanent) | 0.9 |
+| `open_loop` | Commitments, pending items | No | ∞ (permanent) | 0.8 |
+| `idea` | Proposed improvements | No | 30 days | 0.6 |
+| `event` | What happened (append-only log) | Yes | 7 days | 0.5 |
+| `metric` | Time-limited measurements | Yes (with TTL) | 1 day | 0.4 |
+| `preference` | User preferences (legacy compat) | No | ∞ (permanent) | 0.7 |
+| `lesson` | Learned outcomes (legacy compat) | No | 90 days | 0.7 |
+| `finding` | Tester findings (bugs, UX issues, etc.) | Yes (via manager.log_finding) | 30 days | 0.75 |
+| `impl_task` | Implementation tasks for implementer | Yes (via manager.create_task) | ∞ (permanent) | 0.8 |
 
 #### Layer 3: Legacy Memory
 - **Preferences**: User rules (write-through to memory_items)
@@ -154,6 +154,15 @@ Stored in `memory_items` table with Qdrant collection `mem_<projectId>`:
 - `done` - Completed (for open_loops)
 - `blocked` - Blocked by dependency
 - `active` - Currently active
+
+#### Memory v2: Write Gate & Anti-Bias
+The memory system includes protections against negativity bias and memory bloat:
+
+1. **Write Gate**: Before storing a new item, semantic search detects duplicates (threshold: 0.85). If found, the existing item is updated instead of creating a duplicate.
+2. **Auto-TTL**: Volatile types (events, findings, lessons, ideas) automatically expire. Permanent types (facts, rules, decisions) never expire.
+3. **Anti-Bias**: Tool failures are NOT stored as permanent lessons. Single failures are transient — only consistent patterns (3+ similar failures) should become lessons.
+4. **Composite Scoring**: Retrieval uses `score = semantic_sim × recency_factor × type_weight × confidence` instead of raw cosine similarity.
+5. **Consolidation**: `POST /maintenance/consolidate` merges duplicates, purges expired items, and archives stale open_loops.
 
 #### Safe Learning (Proposal Flow)
 1. Agent proposes memory via `memory.propose_add` tool
@@ -185,7 +194,7 @@ RAG retrieval includes memory context:
 - Active ideas
 - Semantically relevant memory items
 
-Services: `src/services/memory-items.ts`, `src/services/memory.ts`, `src/services/rag.ts`
+Services: `src/services/memory-items.ts`, `src/services/memory.ts`, `src/services/rag.ts`, `src/services/memory-consolidation.ts`
 
 ## Database Schema
 
@@ -226,6 +235,9 @@ GET  /api/project/:id/tool-calls   # List tool calls
 PATCH /api/memory-items/:id        # Update memory item
 DELETE /api/memory-items/:id       # Delete memory item
 ```
+
+POST /maintenance/purge-expired  # Purge expired memory items
+POST /maintenance/consolidate    # Memory v2: full consolidation (purge + merge + archive)
 
 All endpoints except `/health`, `/docs/*`, and static files require `X-AGENT-KEY` header.
 
