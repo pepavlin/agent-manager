@@ -134,7 +134,7 @@ async function buildApp(): Promise<FastifyInstance> {
 
   // Error handler
   app.setErrorHandler(async (error: Error & { validation?: unknown; statusCode?: number }, request, reply) => {
-    serverLogger.error({ error, url: request.url }, 'Request error');
+    serverLogger.error({ err: error, url: request.url }, 'Request error');
 
     // Handle validation errors
     if (error.validation) {
