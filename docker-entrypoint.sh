@@ -45,30 +45,43 @@ ONBOARDING_EOF
 fi
 
 # Pull Ollama embedding model if using ollama provider
-if [ "${EMBEDDING_PROVIDER:-mock}" = "ollama" ]; then
+if [ "${EMBEDDING_PROVIDER:-ollama}" = "ollama" ]; then
   OLLAMA_MODEL="${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}"
   OLLAMA_HOST="${OLLAMA_BASE_URL:-http://ollama:11434}"
   echo "Waiting for Ollama at $OLLAMA_HOST..."
+  OLLAMA_READY=false
   for i in $(seq 1 30); do
-    if curl -sf "$OLLAMA_HOST/" > /dev/null 2>&1; then
+    if wget -q -O /dev/null "$OLLAMA_HOST/" 2>/dev/null; then
       echo "Ollama is ready."
+      OLLAMA_READY=true
       break
-    fi
-    if [ "$i" = "30" ]; then
-      echo "Warning: Ollama not reachable at $OLLAMA_HOST after 60s"
     fi
     sleep 2
   done
-  echo "Pulling Ollama embedding model: $OLLAMA_MODEL (this may take a while on first run)..."
-  # /api/pull streams JSON lines — must consume the full response for the pull to complete
-  curl -s --no-buffer "$OLLAMA_HOST/api/pull" -d "{\"name\": \"$OLLAMA_MODEL\"}" | while read -r line; do
-    STATUS=$(echo "$line" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
-    if [ -n "$STATUS" ]; then
-      printf "\r  %s" "$STATUS"
+
+  if [ "$OLLAMA_READY" = "true" ]; then
+    echo "Pulling Ollama embedding model: $OLLAMA_MODEL (this may take a while on first run)..."
+    # Use wget — available on Alpine by default. Must consume full streamed response.
+    PULL_RESULT=$(wget -q -O - --post-data="{\"name\": \"$OLLAMA_MODEL\", \"stream\": false}" \
+      --header="Content-Type: application/json" \
+      "$OLLAMA_HOST/api/pull" 2>&1) || true
+    if echo "$PULL_RESULT" | grep -q '"status":"success"'; then
+      echo "Ollama embedding model '$OLLAMA_MODEL' is ready."
+    else
+      echo "Warning: Ollama pull response: $PULL_RESULT"
+      echo "Trying to verify model exists..."
+      # Check if model is already available
+      if wget -q -O - --post-data="{\"model\": \"$OLLAMA_MODEL\", \"input\": \"test\"}" \
+        --header="Content-Type: application/json" \
+        "$OLLAMA_HOST/api/embed" > /dev/null 2>&1; then
+        echo "Model '$OLLAMA_MODEL' is available."
+      else
+        echo "WARNING: Ollama model '$OLLAMA_MODEL' may not be available. Embeddings will fail."
+      fi
     fi
-  done
-  echo ""
-  echo "Ollama embedding model ready."
+  else
+    echo "WARNING: Ollama not reachable at $OLLAMA_HOST after 60s. Embeddings will fail."
+  fi
 fi
 
 # Run database migrations
