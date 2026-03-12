@@ -68,8 +68,8 @@ RUN mkdir -p /app/data/uploads && chown -R agent:nodejs /app/data
 # Create .claude directory for credentials
 RUN mkdir -p /home/agent/.claude && chown -R agent:nodejs /home/agent/.claude
 
-# Switch to non-root user
-USER agent
+# Entrypoint runs as root to fix volume permissions, then drops to agent via su-exec
+RUN apk add --no-cache su-exec
 
 # Expose port
 EXPOSE 3000
