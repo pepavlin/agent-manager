@@ -88,6 +88,9 @@ export async function upsertPoints(projectId: string, points: QdrantPoint[]): Pr
     return;
   }
 
+  // Ensure collection exists with correct dimensions before upserting
+  await ensureCollection(projectId);
+
   const qdrant = getQdrantClient();
   const collectionName = getCollectionName(projectId);
 
