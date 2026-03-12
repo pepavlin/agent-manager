@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+# Ensure upload directory exists (mkdir -p won't fail if it already exists)
+mkdir -p "${STORAGE_PATH:-/app/data/uploads}" 2>/dev/null || true
+
 CLAUDE_DIR="$HOME/.claude"
 mkdir -p "$CLAUDE_DIR"
 
