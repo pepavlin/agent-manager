@@ -51,12 +51,23 @@ if [ "${EMBEDDING_PROVIDER:-mock}" = "ollama" ]; then
   echo "Waiting for Ollama at $OLLAMA_HOST..."
   for i in $(seq 1 30); do
     if curl -sf "$OLLAMA_HOST/" > /dev/null 2>&1; then
+      echo "Ollama is ready."
       break
+    fi
+    if [ "$i" = "30" ]; then
+      echo "Warning: Ollama not reachable at $OLLAMA_HOST after 60s"
     fi
     sleep 2
   done
-  echo "Pulling Ollama embedding model: $OLLAMA_MODEL..."
-  curl -sf "$OLLAMA_HOST/api/pull" -d "{\"name\": \"$OLLAMA_MODEL\"}" > /dev/null 2>&1 || echo "Warning: Failed to pull $OLLAMA_MODEL (may already exist)"
+  echo "Pulling Ollama embedding model: $OLLAMA_MODEL (this may take a while on first run)..."
+  # /api/pull streams JSON lines — must consume the full response for the pull to complete
+  curl -s --no-buffer "$OLLAMA_HOST/api/pull" -d "{\"name\": \"$OLLAMA_MODEL\"}" | while read -r line; do
+    STATUS=$(echo "$line" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+    if [ -n "$STATUS" ]; then
+      printf "\r  %s" "$STATUS"
+    fi
+  done
+  echo ""
   echo "Ollama embedding model ready."
 fi
 
