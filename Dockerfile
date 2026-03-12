@@ -1,4 +1,17 @@
-# Build stage
+# Frontend build stage
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app/frontend
+
+# Copy frontend package files and install
+COPY frontend/package*.json ./
+RUN npm ci --legacy-peer-deps
+
+# Copy frontend source and build
+COPY frontend/ ./
+RUN npm run build
+
+# Backend build stage
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -28,7 +41,7 @@ COPY tsconfig.json ./
 COPY src ./src/
 
 # Build TypeScript
-RUN npm run build
+RUN npx tsc
 
 # Production stage
 FROM node:20-alpine AS production
@@ -55,8 +68,11 @@ RUN npm ci --only=production
 # Generate Prisma client
 RUN npx prisma generate
 
-# Copy built files
+# Copy built backend
 COPY --from=builder /app/dist ./dist
+
+# Copy built frontend (vite builds to ../public relative to frontend/, so /app/public)
+COPY --from=frontend-builder /app/public ./public
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

@@ -1,0 +1,15 @@
+node_modules
+frontend/node_modules
+dist
+public
+data
+tmp
+.git
+.env
+.env.local
+*.log
+coverage
+.nyc_output
+postgres-data
+qdrant-data
+ollama-data

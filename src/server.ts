@@ -1,15 +1,21 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { config } from './config.js';
 import { logger, createChildLogger } from './utils/logger.js';
 import { prisma, connectDatabase, disconnectDatabase } from './db/client.js';
 import { registerRoutes } from './routes/index.js';
 import { isAppError } from './utils/errors.js';
 import { initMcpClients, shutdownMcpClients } from './services/mcp-client.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const serverLogger = createChildLogger('server');
 
@@ -105,10 +111,15 @@ async function buildApp(): Promise<FastifyInstance> {
 
   // API key authentication hook
   app.addHook('preHandler', async (request, reply) => {
-    // Skip auth for health check and docs
+    // Skip auth for health check, docs, and static files
     if (
       request.url === '/health' ||
-      request.url.startsWith('/docs')
+      request.url.startsWith('/docs') ||
+      (!request.url.startsWith('/api/') &&
+       !request.url.startsWith('/chat') &&
+       !request.url.startsWith('/projects') &&
+       !request.url.startsWith('/tools') &&
+       !request.url.startsWith('/maintenance'))
     ) {
       return;
     }
@@ -168,6 +179,29 @@ async function buildApp(): Promise<FastifyInstance> {
 
   // Register routes
   await registerRoutes(app);
+
+  // Serve static frontend files
+  await app.register(fastifyStatic, {
+    root: join(__dirname, '..', 'public'),
+    prefix: '/',
+    decorateReply: false,
+  });
+
+  // SPA fallback - serve index.html for unmatched routes
+  app.setNotFoundHandler(async (request, reply) => {
+    // Return 404 JSON for API/known routes
+    if (
+      request.url.startsWith('/api/') ||
+      request.url.startsWith('/chat') ||
+      request.url.startsWith('/projects') ||
+      request.url.startsWith('/tools') ||
+      request.url.startsWith('/maintenance')
+    ) {
+      return reply.status(404).send({ error: 'Not found' });
+    }
+    // SPA fallback for frontend routes
+    return reply.sendFile('index.html');
+  });
 
   return app;
 }

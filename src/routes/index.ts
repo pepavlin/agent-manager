@@ -5,6 +5,7 @@ import { chatRoutes } from './chat.js';
 import { toolRoutes } from './tools.js';
 import { maintenanceRoutes } from './maintenance.js';
 import { debugRoutes } from './debug.js';
+import { dashboardRoutes } from './dashboard.js';
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await app.register(healthRoutes);
@@ -13,4 +14,5 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await app.register(toolRoutes);
   await app.register(maintenanceRoutes);
   await app.register(debugRoutes);
+  await app.register(dashboardRoutes);
 }
