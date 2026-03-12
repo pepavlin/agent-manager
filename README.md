@@ -323,6 +323,26 @@ Content-Type: application/json
 | RULES | How to decide | Playbook, guidelines, constraints |
 | STATE | Current status | Backlog snapshot, sprint status |
 
+## Manager Agent Tools (Built-in)
+
+The agent includes built-in manager tools for product management workflows (tester → manager → implementer). These are auto-executed, like memory tools.
+
+| Tool | Purpose |
+|------|---------|
+| `manager.log_finding` | Log a finding from tester (bug, UX issue, regression, etc.). Stores as `finding` memory item. |
+| `manager.create_task` | Create an implementation task from evaluated findings. Stores as `impl_task` memory item. Links to source findings. |
+| `manager.decide_finding` | Reject or defer a finding with rationale. Logs decision as event for learning. |
+
+### Manager Workflow
+
+1. Tester sends finding as a chat message
+2. Agent evaluates it against the product brief (KB documents) and past decisions (memory)
+3. Agent calls `manager.log_finding` to store it
+4. Agent decides: `manager.create_task` (implement) or `manager.decide_finding` (reject/defer)
+5. Decisions are logged as events — agent learns patterns over time
+
+Findings and tasks appear in the **Situational Picture** (RAG context), so the agent always sees them when making decisions. To use this workflow, upload the product brief as FACTS/RULES documents and set a roleStatement describing the manager role.
+
 ## Agent Behavior
 
 The agent always responds in one of three modes:

@@ -196,6 +196,8 @@ enum MemoryItemType {
   metric
   preference
   lesson
+  finding
+  impl_task
 }
 
 enum MemoryItemSource {

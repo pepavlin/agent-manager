@@ -281,7 +281,7 @@ describe('Zod Schema Validation', () => {
 
   describe('MemoryItemTypeSchema', () => {
     it('should accept all valid types', () => {
-      const validTypes = ['fact', 'rule', 'event', 'decision', 'open_loop', 'idea', 'metric', 'preference', 'lesson'];
+      const validTypes = ['fact', 'rule', 'event', 'decision', 'open_loop', 'idea', 'metric', 'preference', 'lesson', 'finding', 'impl_task'];
       for (const type of validTypes) {
         expect(MemoryItemTypeSchema.parse(type)).toBe(type);
       }

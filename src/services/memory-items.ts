@@ -440,6 +440,38 @@ export async function getAcceptedRules(
 }
 
 /**
+ * Get recent findings for a project (not yet resolved)
+ */
+export async function getRecentFindings(
+  projectId: string,
+  limit: number = 10
+): Promise<MemoryItem[]> {
+  return getMemoryItems(projectId, {
+    types: ['finding'],
+    statuses: ['proposed', 'accepted', 'active'],
+    limit,
+    orderBy: 'createdAt',
+    orderDir: 'desc',
+  });
+}
+
+/**
+ * Get pending implementation tasks for a project
+ */
+export async function getPendingTasks(
+  projectId: string,
+  limit: number = 10
+): Promise<MemoryItem[]> {
+  return getMemoryItems(projectId, {
+    types: ['impl_task'],
+    statuses: ['proposed', 'accepted', 'active'],
+    limit,
+    orderBy: 'createdAt',
+    orderDir: 'desc',
+  });
+}
+
+/**
  * Count all accepted rules for a project (regardless of limit)
  */
 export async function countAcceptedRules(projectId: string): Promise<number> {

@@ -10,6 +10,8 @@ import {
   getAcceptedRules,
   countAcceptedRules,
   searchMemoryItems,
+  getRecentFindings,
+  getPendingTasks,
 } from './memory-items.js';
 
 const logger = createChildLogger('rag');
@@ -22,6 +24,8 @@ const OPEN_LOOPS_LIMIT = 10;
 const RECENT_EVENTS_LIMIT = 5;
 const ACTIVE_IDEAS_LIMIT = 5;
 const RELEVANT_MEMORY_LIMIT = 8;
+const RECENT_FINDINGS_LIMIT = 10;
+const PENDING_TASKS_LIMIT = 10;
 
 export interface RAGOptions {
   kbLimit?: number;
@@ -34,6 +38,8 @@ export interface RAGOptions {
   recentEventsLimit?: number;
   activeIdeasLimit?: number;
   relevantMemoryLimit?: number;
+  recentFindingsLimit?: number;
+  pendingTasksLimit?: number;
 }
 
 export async function retrieveContext(
@@ -204,6 +210,8 @@ export interface MemoryContextOptions {
   recentEventsLimit?: number;
   activeIdeasLimit?: number;
   relevantMemoryLimit?: number;
+  recentFindingsLimit?: number;
+  pendingTasksLimit?: number;
 }
 
 export async function retrieveMemoryContext(
@@ -217,12 +225,14 @@ export async function retrieveMemoryContext(
     recentEventsLimit = RECENT_EVENTS_LIMIT,
     activeIdeasLimit = ACTIVE_IDEAS_LIMIT,
     relevantMemoryLimit = RELEVANT_MEMORY_LIMIT,
+    recentFindingsLimit = RECENT_FINDINGS_LIMIT,
+    pendingTasksLimit = PENDING_TASKS_LIMIT,
   } = options;
 
   logger.debug({ projectId, userId, query: query.slice(0, 100) }, 'Retrieving memory context');
 
   // Run all memory queries in parallel
-  const [openLoops, recentEvents, activeIdeas, relevantMemory] = await Promise.all([
+  const [openLoops, recentEvents, activeIdeas, relevantMemory, recentFindings, pendingTasks] = await Promise.all([
     // Open loops (not done) - regardless of similarity
     getOpenLoops(projectId, userId, openLoopsLimit).catch((err) => {
       logger.warn({ err }, 'Failed to get open loops');
@@ -241,12 +251,24 @@ export async function retrieveMemoryContext(
       return [] as MemoryItem[];
     }),
 
-    // Semantic search for relevant memory items
+    // Semantic search for relevant memory items (includes findings for dedup awareness)
     searchMemoryItems(projectId, query, relevantMemoryLimit, {
-      types: ['fact', 'decision', 'lesson', 'preference'],
+      types: ['fact', 'decision', 'lesson', 'preference', 'finding', 'impl_task'],
       excludeExpired: true,
     }).catch((err) => {
       logger.warn({ err }, 'Failed to search memory items');
+      return [] as MemoryItem[];
+    }),
+
+    // Recent findings (from tester agent)
+    getRecentFindings(projectId, recentFindingsLimit).catch((err) => {
+      logger.warn({ err }, 'Failed to get recent findings');
+      return [] as MemoryItem[];
+    }),
+
+    // Pending implementation tasks
+    getPendingTasks(projectId, pendingTasksLimit).catch((err) => {
+      logger.warn({ err }, 'Failed to get pending tasks');
       return [] as MemoryItem[];
     }),
   ]);
@@ -257,6 +279,8 @@ export async function retrieveMemoryContext(
       recentEvents: recentEvents.length,
       activeIdeas: activeIdeas.length,
       relevantMemory: relevantMemory.length,
+      recentFindings: recentFindings.length,
+      pendingTasks: pendingTasks.length,
     },
     'Memory context retrieved'
   );
@@ -266,5 +290,7 @@ export async function retrieveMemoryContext(
     recentEvents,
     relevantMemory,
     activeIdeas,
+    recentFindings,
+    pendingTasks,
   };
 }

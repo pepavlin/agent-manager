@@ -90,6 +90,20 @@ Tools are **not** defined statically in the codebase. They are passed with each 
 
 Each project/request can have different tools. Agent validates tool requests against the provided tools array. External system (n8n) executes tools and calls `POST /tools/result` with outcome.
 
+### Manager Tools (Built-in)
+
+Built-in auto-executed tools for product management workflow (tester → manager → implementer):
+
+| Tool | Purpose | Creates |
+|------|---------|---------|
+| `manager.log_finding` | Log tester finding (bug, UX issue, regression, etc.) | `finding` memory item |
+| `manager.create_task` | Create implementation task from findings | `impl_task` memory item |
+| `manager.decide_finding` | Reject or defer finding with rationale | Updates finding status + logs event |
+
+Findings and tasks are stored as memory items (types `finding`, `impl_task`) and appear in the RAG situational picture. Decisions are logged as events for learning.
+
+Services: `src/services/agent.ts` (MANAGER_TOOLS, executeManagerTool)
+
 ### Document Processing
 
 Documents uploaded via `POST /projects/:id/docs` are:
@@ -123,6 +137,8 @@ Stored in `memory_items` table with Qdrant collection `mem_<projectId>`:
 | `metric` | Time-limited measurements | Yes (with TTL) |
 | `preference` | User preferences (legacy compat) | No |
 | `lesson` | Learned outcomes (legacy compat) | No |
+| `finding` | Tester findings (bugs, UX issues, etc.) | Yes (via manager.log_finding) |
+| `impl_task` | Implementation tasks for implementer | Yes (via manager.create_task) |
 
 #### Layer 3: Legacy Memory
 - **Preferences**: User rules (write-through to memory_items)
@@ -149,6 +165,14 @@ Stored in `memory_items` table with Qdrant collection `mem_<projectId>`:
 // Available automatically in all chat requests
 memory.propose_add     // Propose new memory item
 memory.propose_update  // Propose updating existing item
+```
+
+#### Built-in Manager Tools
+```typescript
+// Available automatically in all chat requests
+manager.log_finding    // Log a finding from tester
+manager.create_task    // Create implementation task
+manager.decide_finding // Reject or defer a finding
 ```
 
 #### Situational Picture

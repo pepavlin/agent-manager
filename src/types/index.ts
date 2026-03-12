@@ -147,6 +147,8 @@ export const MemoryItemTypeSchema = z.enum([
   'metric',
   'preference',
   'lesson',
+  'finding',
+  'impl_task',
 ]);
 export type MemoryItemType = z.infer<typeof MemoryItemTypeSchema>;
 
@@ -223,7 +225,55 @@ export interface MemoryContext {
   recentEvents: MemoryItem[];
   relevantMemory: MemoryItem[];
   activeIdeas: MemoryItem[];
+  recentFindings: MemoryItem[];
+  pendingTasks: MemoryItem[];
 }
+
+// Manager tool schemas
+export const FindingSeveritySchema = z.enum(['critical', 'high', 'medium', 'low']);
+export type FindingSeverity = z.infer<typeof FindingSeveritySchema>;
+
+export const FindingTypeSchema = z.enum([
+  'bug',
+  'ux_issue',
+  'regression',
+  'improvement',
+  'inconsistency',
+  'missing_feature',
+  'technical_debt',
+]);
+export type FindingType = z.infer<typeof FindingTypeSchema>;
+
+export const ManagerLogFindingSchema = z.object({
+  finding_type: FindingTypeSchema,
+  severity: FindingSeveritySchema,
+  title: z.string().min(1),
+  description: z.string().min(1),
+  component: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+});
+export type ManagerLogFindingRequest = z.infer<typeof ManagerLogFindingSchema>;
+
+export const TaskPrioritySchema = z.enum(['critical', 'high', 'medium', 'low']);
+export type TaskPriority = z.infer<typeof TaskPrioritySchema>;
+
+export const ManagerCreateTaskSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().min(1),
+  priority: TaskPrioritySchema,
+  acceptance_criteria: z.string().optional(),
+  rationale: z.string().min(1),
+  finding_ids: z.array(z.string()).optional(),
+  tags: z.array(z.string()).optional(),
+});
+export type ManagerCreateTaskRequest = z.infer<typeof ManagerCreateTaskSchema>;
+
+export const ManagerDecideFindingSchema = z.object({
+  finding_id: z.string(),
+  decision: z.enum(['rejected', 'deferred']),
+  rationale: z.string().min(1),
+});
+export type ManagerDecideFindingRequest = z.infer<typeof ManagerDecideFindingSchema>;
 
 // Memory proposal tool schemas
 export const MemoryProposeAddSchema = z.object({

@@ -246,6 +246,8 @@ describe('Prompt Assembly', () => {
         recentEvents: [],
         activeIdeas: [],
         relevantMemory: [],
+        recentFindings: [],
+        pendingTasks: [],
       };
       const prompt = assembleUserPrompt('status?', context);
       expect(prompt).toContain('SITUATIONAL PICTURE');
@@ -260,6 +262,8 @@ describe('Prompt Assembly', () => {
         recentEvents: [makeMemoryItem({ type: 'event', title: 'Deployed v1.2' })],
         activeIdeas: [],
         relevantMemory: [],
+        recentFindings: [],
+        pendingTasks: [],
       };
       const prompt = assembleUserPrompt('test', context);
       expect(prompt).toContain('Recent Events');
@@ -273,6 +277,8 @@ describe('Prompt Assembly', () => {
         recentEvents: [],
         activeIdeas: [makeMemoryItem({ type: 'idea', title: 'Add dark mode' })],
         relevantMemory: [],
+        recentFindings: [],
+        pendingTasks: [],
       };
       const prompt = assembleUserPrompt('test', context);
       expect(prompt).toContain('Active Ideas');
@@ -286,6 +292,8 @@ describe('Prompt Assembly', () => {
         recentEvents: [],
         activeIdeas: [],
         relevantMemory: [makeMemoryItem({ type: 'decision', title: 'Use Kubernetes' })],
+        recentFindings: [],
+        pendingTasks: [],
       };
       const prompt = assembleUserPrompt('test', context);
       expect(prompt).toContain('Relevant Memory');
@@ -299,9 +307,41 @@ describe('Prompt Assembly', () => {
         recentEvents: [],
         activeIdeas: [],
         relevantMemory: [],
+        recentFindings: [],
+        pendingTasks: [],
       };
       const prompt = assembleUserPrompt('test', context);
       expect(prompt).not.toContain('SITUATIONAL PICTURE');
+    });
+
+    it('should include situational picture with recent findings', () => {
+      const context = makeEmptyContext();
+      context.memoryContext = {
+        openLoops: [],
+        recentEvents: [],
+        activeIdeas: [],
+        relevantMemory: [],
+        recentFindings: [makeMemoryItem({ type: 'finding', title: 'Broken mobile nav' })],
+        pendingTasks: [],
+      };
+      const prompt = assembleUserPrompt('test', context);
+      expect(prompt).toContain('Recent Findings');
+      expect(prompt).toContain('Broken mobile nav');
+    });
+
+    it('should include situational picture with pending tasks', () => {
+      const context = makeEmptyContext();
+      context.memoryContext = {
+        openLoops: [],
+        recentEvents: [],
+        activeIdeas: [],
+        relevantMemory: [],
+        recentFindings: [],
+        pendingTasks: [makeMemoryItem({ type: 'impl_task', title: 'Fix responsive layout' })],
+      };
+      const prompt = assembleUserPrompt('test', context);
+      expect(prompt).toContain('Pending Implementation Tasks');
+      expect(prompt).toContain('Fix responsive layout');
     });
 
     it('should omit situational picture when memoryContext is undefined', () => {

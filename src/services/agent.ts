@@ -11,6 +11,9 @@ import {
   ToolRequest,
   MemoryProposeAddSchema,
   MemoryProposeUpdateSchema,
+  ManagerLogFindingSchema,
+  ManagerCreateTaskSchema,
+  ManagerDecideFindingSchema,
 } from '../types/index.js';
 import { extractJson } from '../utils/json-repair.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -182,6 +185,235 @@ async function executeMemoryTool(
   }
 }
 
+// Built-in manager tools (for product management workflow)
+const MANAGER_TOOLS: ToolInput[] = [
+  {
+    name: 'manager.log_finding',
+    description: 'Log a finding from tester. Use this when receiving a bug report, UX issue, regression, or other finding that needs to be evaluated against the product brief.',
+    parameters: {
+      finding_type: {
+        type: 'string',
+        description: 'Type: bug, ux_issue, regression, improvement, inconsistency, missing_feature, technical_debt',
+        required: true,
+      },
+      severity: {
+        type: 'string',
+        description: 'Severity: critical, high, medium, low',
+        required: true,
+      },
+      title: {
+        type: 'string',
+        description: 'Short title summarizing the finding',
+        required: true,
+      },
+      description: {
+        type: 'string',
+        description: 'Detailed description of the finding, including context and impact',
+        required: true,
+      },
+      component: {
+        type: 'string',
+        description: 'Affected component or area of the application',
+        required: false,
+      },
+      tags: {
+        type: 'array',
+        description: 'Tags for categorization',
+        required: false,
+      },
+    },
+    requires_approval: false,
+    risk: 'low',
+  },
+  {
+    name: 'manager.create_task',
+    description: 'Create an implementation task for the implementer agent. Use this after evaluating findings against the product brief and deciding that implementation is needed. The task should be higher quality than the original finding — well-structured, with clear acceptance criteria and rationale.',
+    parameters: {
+      title: {
+        type: 'string',
+        description: 'Clear, actionable task title',
+        required: true,
+      },
+      description: {
+        type: 'string',
+        description: 'Detailed task description including problem, expected behavior, and context',
+        required: true,
+      },
+      priority: {
+        type: 'string',
+        description: 'Priority: critical, high, medium, low',
+        required: true,
+      },
+      acceptance_criteria: {
+        type: 'string',
+        description: 'What must be true for this task to be considered done',
+        required: false,
+      },
+      rationale: {
+        type: 'string',
+        description: 'Why this task should be implemented — reference product brief, user impact, or pattern of findings',
+        required: true,
+      },
+      finding_ids: {
+        type: 'array',
+        description: 'IDs of findings that led to this task',
+        required: false,
+      },
+      tags: {
+        type: 'array',
+        description: 'Tags for categorization',
+        required: false,
+      },
+    },
+    requires_approval: false,
+    risk: 'low',
+  },
+  {
+    name: 'manager.decide_finding',
+    description: 'Reject or defer a finding. Use this when a finding should NOT be implemented — either because it conflicts with the product brief, is a duplicate, is too low priority, or the symptom of a broader issue that should be addressed differently.',
+    parameters: {
+      finding_id: {
+        type: 'string',
+        description: 'ID of the finding to reject or defer',
+        required: true,
+      },
+      decision: {
+        type: 'string',
+        description: 'Decision: rejected (will not implement) or deferred (valid but not now)',
+        required: true,
+      },
+      rationale: {
+        type: 'string',
+        description: 'Why this finding is being rejected or deferred — reference product brief rules, priorities, or broader context',
+        required: true,
+      },
+    },
+    requires_approval: false,
+    risk: 'low',
+  },
+];
+
+/**
+ * Check if a tool is a built-in manager tool
+ */
+function isManagerTool(toolName: string): boolean {
+  return toolName.startsWith('manager.');
+}
+
+/**
+ * Handle manager tool execution (auto-executed)
+ */
+async function executeManagerTool(
+  projectId: string,
+  userId: string,
+  toolRequest: ToolRequest
+): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+  try {
+    if (toolRequest.name === 'manager.log_finding') {
+      const parsed = ManagerLogFindingSchema.safeParse(toolRequest.args);
+      if (!parsed.success) {
+        return { ok: false, error: `Invalid arguments: ${parsed.error.message}` };
+      }
+
+      const args = parsed.data;
+      const item = await createMemoryItem({
+        projectId,
+        userId,
+        type: 'finding',
+        title: args.title,
+        content: {
+          finding_type: args.finding_type,
+          severity: args.severity,
+          description: args.description,
+          ...(args.component && { component: args.component }),
+        },
+        status: 'proposed',
+        source: 'user_chat',
+        confidence: 0.8,
+        tags: args.tags ?? [],
+      });
+
+      return { ok: true, data: { finding_id: item.id, status: item.status } };
+    }
+
+    if (toolRequest.name === 'manager.create_task') {
+      const parsed = ManagerCreateTaskSchema.safeParse(toolRequest.args);
+      if (!parsed.success) {
+        return { ok: false, error: `Invalid arguments: ${parsed.error.message}` };
+      }
+
+      const args = parsed.data;
+
+      // Mark linked findings as done (converted to task)
+      if (args.finding_ids && args.finding_ids.length > 0) {
+        for (const findingId of args.finding_ids) {
+          try {
+            await updateMemoryItem(findingId, { status: 'done' });
+          } catch (err) {
+            logger.warn({ err, findingId }, 'Failed to update finding status to done');
+          }
+        }
+      }
+
+      const item = await createMemoryItem({
+        projectId,
+        userId,
+        type: 'impl_task',
+        title: args.title,
+        content: {
+          description: args.description,
+          priority: args.priority,
+          rationale: args.rationale,
+          ...(args.acceptance_criteria && { acceptance_criteria: args.acceptance_criteria }),
+          ...(args.finding_ids && { finding_ids: args.finding_ids }),
+        },
+        status: 'proposed',
+        source: 'user_chat',
+        confidence: 0.9,
+        tags: args.tags ?? [],
+      });
+
+      return { ok: true, data: { task_id: item.id, status: item.status } };
+    }
+
+    if (toolRequest.name === 'manager.decide_finding') {
+      const parsed = ManagerDecideFindingSchema.safeParse(toolRequest.args);
+      if (!parsed.success) {
+        return { ok: false, error: `Invalid arguments: ${parsed.error.message}` };
+      }
+
+      const args = parsed.data;
+      const newStatus = args.decision === 'rejected' ? 'rejected' : 'blocked';
+
+      // Fetch existing finding to merge content (not overwrite)
+      const existing = await prisma.memoryItem.findUnique({ where: { id: args.finding_id } });
+      if (!existing) {
+        return { ok: false, error: `Finding not found: ${args.finding_id}` };
+      }
+      const existingContent = (existing.content as Record<string, unknown>) || {};
+
+      const item = await updateMemoryItem(args.finding_id, {
+        status: newStatus as 'rejected' | 'blocked',
+        content: { ...existingContent, decision: args.decision, decision_rationale: args.rationale },
+      });
+
+      // Log the decision as a memory event for learning
+      await createEvent(projectId, `Finding ${args.decision}: ${item.title}`, {
+        finding_id: args.finding_id,
+        decision: args.decision,
+        rationale: args.rationale,
+      }, { userId, source: 'user_chat' });
+
+      return { ok: true, data: { finding_id: item.id, status: item.status, decision: args.decision } };
+    }
+
+    return { ok: false, error: `Unknown manager tool: ${toolRequest.name}` };
+  } catch (error) {
+    logger.error({ error, toolRequest }, 'Manager tool execution failed');
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 function validateToolRequest(
   toolRequest: ToolRequest,
   availableTools: ToolInput[]
@@ -218,10 +450,10 @@ function validateToolRequest(
 export async function processChat(request: ChatRequest): Promise<ChatResponse> {
   const { project_id, user_id, thread_id, message, tools, context: requestContext } = request;
 
-  // Merge user-provided tools with built-in memory tools and MCP tools
+  // Merge user-provided tools with built-in memory tools, manager tools, and MCP tools
   const mcpManager = getMcpClientManager();
   const mcpTools = mcpManager ? mcpManager.getTools() : [];
-  const allTools = [...tools, ...MEMORY_TOOLS, ...mcpTools];
+  const allTools = [...tools, ...MEMORY_TOOLS, ...MANAGER_TOOLS, ...mcpTools];
 
   logger.info({ project_id, user_id, thread_id, messageLength: message.length, toolsCount: allTools.length }, 'Processing chat');
 
@@ -324,12 +556,47 @@ export async function processChat(request: ChatRequest): Promise<ChatResponse> {
       agentResponse.message = `I tried to use a tool but encountered an error: ${validation.error}. Could you clarify what you need?`;
       agentResponse.tool_request = null;
     } else {
-      // Check if this is a memory tool or MCP tool (both auto-executed)
+      // Check if this is a memory tool, manager tool, or MCP tool (all auto-executed)
       const isMemoryTool = agentResponse.tool_request.name.startsWith('memory.');
+      const isManager = isManagerTool(agentResponse.tool_request.name);
       const isMcp = isMcpTool(agentResponse.tool_request.name);
       const shouldAutoApprove = isMemoryTool && shouldAutoApproveMemoryTool(agentResponse.tool_request);
 
-      if (isMcp && mcpManager) {
+      if (isManager) {
+        // Execute manager tool immediately (auto-executed)
+        logger.debug({ tool: agentResponse.tool_request.name }, 'Auto-executing manager tool');
+        const result = await executeManagerTool(project_id, user_id, agentResponse.tool_request);
+
+        const toolCall = await prisma.toolCall.create({
+          data: {
+            projectId: project_id,
+            threadId: threadIdToUse,
+            name: agentResponse.tool_request.name,
+            argsJson: JSON.stringify(agentResponse.tool_request.args),
+            requiresApproval: false,
+            risk: 'low',
+            status: result.ok ? 'completed' : 'failed',
+            resultJson: JSON.stringify(result),
+            toolsJson: JSON.stringify({ tools, source: requestContext?.source }),
+          },
+        });
+
+        await prisma.message.create({
+          data: {
+            threadId: threadIdToUse,
+            role: 'tool',
+            content: JSON.stringify({
+              tool_name: agentResponse.tool_request.name,
+              ok: result.ok,
+              data: result.data,
+              error: result.error,
+            }),
+          },
+        });
+
+        pendingToolCallId = toolCall.id;
+        autoExecutedResult = result;
+      } else if (isMcp && mcpManager) {
         // Execute MCP tool immediately (auto-executed)
         logger.debug({ tool: agentResponse.tool_request.name }, 'Auto-executing MCP tool');
         const result = await mcpManager.executeTool(
@@ -613,8 +880,8 @@ export async function processToolResult(
   }
 
   // Automatically call processChat so the agent can respond to the tool result
-  // Skip reflection for memory tools to avoid recursive self-reflection loops
-  const isMemoryToolResult = toolCall.name.startsWith('memory.');
+  // Skip reflection for memory/manager tools to avoid recursive self-reflection loops
+  const isMemoryToolResult = toolCall.name.startsWith('memory.') || toolCall.name.startsWith('manager.');
   const reflectionSuffix = isMemoryToolResult
     ? ''
     : ok
