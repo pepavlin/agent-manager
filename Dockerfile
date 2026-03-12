@@ -36,7 +36,7 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 # Install dumb-init, openssl (Prisma), bash and git (Claude Code needs them)
-RUN apk add --no-cache dumb-init openssl bash git
+RUN apk add --no-cache dumb-init openssl bash git curl
 
 # Create non-root user with home directory
 RUN addgroup -g 1001 -S nodejs && \
