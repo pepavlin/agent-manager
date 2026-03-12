@@ -62,13 +62,11 @@ cp .env.example .env
 
 ```bash
 # Start all services (Postgres, Qdrant, Agent API)
+# Migrations run automatically on startup via docker-entrypoint.sh
 docker compose up -d
 
 # Check logs
 docker compose logs -f agent-api
-
-# Run database migrations
-docker compose exec agent-api npx prisma migrate deploy
 ```
 
 ### 3. Local Development
