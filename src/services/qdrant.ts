@@ -26,29 +26,49 @@ export function getCollectionName(projectId: string): string {
   return `kb_${projectId}`;
 }
 
-export async function ensureCollection(projectId: string): Promise<void> {
+async function ensureCollectionWithDims(
+  collectionName: string,
+  dims: number,
+  label: string = 'collection'
+): Promise<void> {
   const qdrant = getQdrantClient();
-  const collectionName = getCollectionName(projectId);
-  const embeddingProvider = getEmbeddingProvider();
-  const dims = embeddingProvider.dims();
 
   try {
     const collections = await qdrant.getCollections();
     const exists = collections.collections.some((c) => c.name === collectionName);
 
-    if (!exists) {
+    if (exists) {
+      // Verify dimensions match — recreate if they changed (e.g. provider switch)
+      const info = await qdrant.getCollection(collectionName);
+      const existingDims = (info.config?.params?.vectors as { size?: number })?.size;
+      if (existingDims && existingDims !== dims) {
+        logger.warn(
+          { collection: collectionName, existingDims, requiredDims: dims },
+          `${label} dimension mismatch — recreating collection`
+        );
+        await qdrant.deleteCollection(collectionName);
+        await qdrant.createCollection(collectionName, {
+          vectors: { size: dims, distance: 'Cosine' },
+        });
+        logger.info({ collection: collectionName, dims }, `Recreated ${label} with correct dimensions`);
+      }
+    } else {
       await qdrant.createCollection(collectionName, {
-        vectors: {
-          size: dims,
-          distance: 'Cosine',
-        },
+        vectors: { size: dims, distance: 'Cosine' },
       });
-      logger.info({ collection: collectionName, dims }, 'Created Qdrant collection');
+      logger.info({ collection: collectionName, dims }, `Created ${label}`);
     }
   } catch (error) {
-    logger.error({ error, collection: collectionName }, 'Failed to ensure collection');
+    logger.error({ error, collection: collectionName }, `Failed to ensure ${label}`);
     throw error;
   }
+}
+
+export async function ensureCollection(projectId: string): Promise<void> {
+  const collectionName = getCollectionName(projectId);
+  const embeddingProvider = getEmbeddingProvider();
+  const dims = embeddingProvider.dims();
+  await ensureCollectionWithDims(collectionName, dims, 'KB collection');
 }
 
 export interface QdrantPoint {
@@ -180,28 +200,10 @@ export function getMemoryCollectionName(projectId: string): string {
 }
 
 export async function ensureMemoryCollection(projectId: string): Promise<void> {
-  const qdrant = getQdrantClient();
   const collectionName = getMemoryCollectionName(projectId);
   const embeddingProvider = getEmbeddingProvider();
   const dims = embeddingProvider.dims();
-
-  try {
-    const collections = await qdrant.getCollections();
-    const exists = collections.collections.some((c) => c.name === collectionName);
-
-    if (!exists) {
-      await qdrant.createCollection(collectionName, {
-        vectors: {
-          size: dims,
-          distance: 'Cosine',
-        },
-      });
-      logger.info({ collection: collectionName, dims }, 'Created memory collection');
-    }
-  } catch (error) {
-    logger.error({ error, collection: collectionName }, 'Failed to ensure memory collection');
-    throw error;
-  }
+  await ensureCollectionWithDims(collectionName, dims, 'memory collection');
 }
 
 export interface MemoryQdrantPoint {

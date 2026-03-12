@@ -21,7 +21,7 @@ const configSchema = z.object({
 
   // Provider Selection
   chatProvider: z.enum(['openai', 'anthropic', 'claude_cli']).default('claude_cli'),
-  embeddingProvider: z.enum(['openai', 'ollama', 'mock']).default('ollama'),
+  embeddingProvider: z.enum(['openai', 'ollama', 'mock']).default('openai'),
 
   // OpenAI
   openaiApiKey: z.string().optional(),
@@ -42,7 +42,7 @@ const configSchema = z.object({
   ollamaEmbeddingModel: z.string().default('nomic-embed-text'),
 
   // Embeddings
-  embeddingDims: z.coerce.number().default(768),
+  embeddingDims: z.coerce.number().default(3072),
 
   // Storage
   storagePath: z.string().default('./data/uploads'),

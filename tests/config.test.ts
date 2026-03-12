@@ -12,7 +12,7 @@ const configSchema = z.object({
   qdrantUrl: z.string().url(),
   qdrantApiKey: z.string().optional(),
   chatProvider: z.enum(['openai', 'anthropic', 'claude_cli']).default('claude_cli'),
-  embeddingProvider: z.enum(['openai', 'ollama', 'mock']).default('ollama'),
+  embeddingProvider: z.enum(['openai', 'ollama', 'mock']).default('openai'),
   openaiApiKey: z.string().optional(),
   openaiChatModel: z.string().default('gpt-4o'),
   openaiEmbeddingModel: z.string().default('text-embedding-3-large'),
@@ -22,7 +22,7 @@ const configSchema = z.object({
   claudeCliTimeout: z.coerce.number().default(60000),
   ollamaBaseUrl: z.string().default('http://localhost:11434'),
   ollamaEmbeddingModel: z.string().default('nomic-embed-text'),
-  embeddingDims: z.coerce.number().default(768),
+  embeddingDims: z.coerce.number().default(3072),
   storagePath: z.string().default('./data/uploads'),
   maxUploadSizeMb: z.coerce.number().default(50),
   rateLimitMax: z.coerce.number().default(100),
@@ -85,8 +85,8 @@ describe('Config Validation', () => {
     expect(config.port).toBe(3000);
     expect(config.host).toBe('0.0.0.0');
     expect(config.chatProvider).toBe('claude_cli');
-    expect(config.embeddingProvider).toBe('ollama');
-    expect(config.embeddingDims).toBe(768);
+    expect(config.embeddingProvider).toBe('openai');
+    expect(config.embeddingDims).toBe(3072);
     expect(config.maxUploadSizeMb).toBe(50);
     expect(config.rateLimitMax).toBe(100);
     expect(config.logLevel).toBe('info');
