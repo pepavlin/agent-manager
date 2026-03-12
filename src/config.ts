@@ -20,7 +20,7 @@ const configSchema = z.object({
   qdrantApiKey: z.string().optional(),
 
   // Provider Selection
-  chatProvider: z.enum(['openai', 'anthropic', 'claude_cli']).default('openai'),
+  chatProvider: z.enum(['openai', 'anthropic', 'claude_cli']).default('claude_cli'),
   embeddingProvider: z.enum(['openai', 'ollama', 'mock']).default('openai'),
 
   // OpenAI

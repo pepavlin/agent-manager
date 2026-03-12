@@ -29,7 +29,8 @@ npm test tests/chunker.test.ts  # Run specific test
 AGENT_API_KEY=<secret>                    # API authentication
 DATABASE_URL=postgresql://...             # Postgres connection
 QDRANT_URL=http://localhost:6333          # Vector DB
-CHAT_PROVIDER=claude_cli|openai|anthropic # LLM provider
+CHAT_PROVIDER=claude_cli|openai|anthropic # LLM provider (default: claude_cli)
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...  # OAuth token from `claude setup-token`
 EMBEDDING_PROVIDER=mock|openai|ollama     # Embedding provider
 EMBEDDING_DIMS=384                        # Must match provider output
 ```

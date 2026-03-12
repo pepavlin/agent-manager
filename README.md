@@ -53,8 +53,9 @@ cp .env.example .env
 
 # Edit .env with your settings
 # At minimum, set:
+# - CLAUDE_CODE_OAUTH_TOKEN (run `claude setup-token` to generate)
 # - AGENT_API_KEY (any secret string)
-# - OPENAI_API_KEY (if using OpenAI)
+# - OPENAI_API_KEY (only if using OpenAI provider)
 ```
 
 ### 2. Start with Docker Compose
@@ -97,9 +98,9 @@ npm run dev
 
 | Provider | Env Value | Requirements |
 |----------|-----------|--------------|
+| Claude CLI (default) | `CHAT_PROVIDER=claude_cli` | Claude Code installed + `CLAUDE_CODE_OAUTH_TOKEN` |
 | OpenAI | `CHAT_PROVIDER=openai` | `OPENAI_API_KEY` |
 | Anthropic | `CHAT_PROVIDER=anthropic` | `ANTHROPIC_API_KEY` |
-| Claude CLI | `CHAT_PROVIDER=claude_cli` | Claude Code installed |
 
 #### Embedding Providers
 
@@ -108,6 +109,23 @@ npm run dev
 | OpenAI | `EMBEDDING_PROVIDER=openai` | `OPENAI_API_KEY` |
 | Ollama | `EMBEDDING_PROVIDER=ollama` | Ollama running with model |
 | Mock | `EMBEDDING_PROVIDER=mock` | None (for testing) |
+
+### Default Setup (Claude CLI)
+
+```bash
+# 1. Generate OAuth token (requires Claude Pro/Max subscription)
+claude setup-token
+# Copy the token from the output
+
+# 2. Set in .env
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
+CHAT_PROVIDER=claude_cli  # (this is the default)
+
+# 3. Start
+docker compose up -d
+```
+
+Claude Code is pre-installed in the Docker image. The entrypoint automatically configures credentials from `CLAUDE_CODE_OAUTH_TOKEN` and skips interactive onboarding.
 
 ### Fully Local Setup (No API Keys)
 
@@ -265,12 +283,7 @@ Content-Type: application/json
   "response_json": {
     "mode": "NOOP",
     "message": "Based on the requirements document, the main features are...",
-    "tool_request": null,
-    "memory_updates": {
-      "preferences_add": [],
-      "preferences_remove": [],
-      "lessons_add": []
-    }
+    "tool_request": null
   },
   "render": {
     "text_to_send_to_user": "Based on the requirements document, the main features are..."
@@ -443,57 +456,51 @@ export EMBEDDING_DIMS=384
 
 ```
 src/
-├── server.ts           # Fastify server entry
-├── config.ts           # Environment configuration
+├── server.ts              # Fastify server entry
+├── config.ts              # Environment configuration
+├── db/
+│   └── client.ts          # Prisma client singleton
 ├── routes/
-│   ├── projects.ts     # Project CRUD + docs
-│   ├── chat.ts         # Chat endpoint
-│   ├── tools.ts        # Tool callbacks
-│   └── health.ts       # Health check
+│   ├── index.ts           # Route registration
+│   ├── projects.ts        # Project CRUD + docs
+│   ├── chat.ts            # Chat endpoint
+│   ├── tools.ts           # Tool callbacks
+│   ├── health.ts          # Health check
+│   ├── debug.ts           # Debug/inspection routes
+│   └── maintenance.ts     # Maintenance operations
 ├── services/
-│   ├── agent.ts        # Core agent loop
-│   ├── rag.ts          # RAG retrieval
-│   ├── memory.ts       # Preferences/lessons
-│   ├── docs.ts         # Document processing
-│   ├── prompts.ts      # Prompt assembly
-│   ├── brief.ts        # Brief generation
-│   └── qdrant.ts       # Vector DB client
+│   ├── agent.ts           # Core agent loop + manager tools
+│   ├── rag.ts             # RAG retrieval
+│   ├── memory.ts          # Legacy preferences/lessons
+│   ├── memory-items.ts    # Unified memory system
+│   ├── mcp-client.ts      # MCP tool integration
+│   ├── docs.ts            # Document processing
+│   ├── prompts.ts         # Prompt assembly
+│   ├── brief.ts           # Brief generation
+│   └── qdrant.ts          # Vector DB client
 ├── providers/
-│   ├── chat/           # Chat providers
-│   └── embeddings/     # Embedding providers
-├── tools/
-│   ├── registry.ts     # Tool registry
-│   └── definitions.ts  # Tool definitions
+│   ├── chat/              # Chat providers (openai, anthropic, claude-cli)
+│   └── embeddings/        # Embedding providers (openai, ollama, mock)
+├── schemas/
+│   └── index.ts           # Swagger/OpenAPI schemas
+├── types/
+│   └── index.ts           # Zod schemas and TypeScript types
 └── utils/
-    ├── chunking.ts     # Text chunking
-    ├── hashing.ts      # SHA256 + vectors
-    ├── storage.ts      # File storage
-    └── logger.ts       # Pino logger
+    ├── chunking.ts        # Text chunking
+    ├── hashing.ts         # SHA256 + vectors
+    ├── storage.ts         # File storage
+    ├── errors.ts          # Error utilities
+    ├── json-repair.ts     # JSON repair for LLM output
+    └── logger.ts          # Pino logger
 ```
 
 ### Adding a New Tool
 
-1. Add schema in `src/tools/definitions.ts`:
+Tools are dynamic — they are passed with each `POST /chat` request, not defined in the codebase. To add a new tool:
 
-```typescript
-export const MyToolArgsSchema = z.object({
-  param1: z.string(),
-  param2: z.number().optional(),
-});
-
-export const TOOLS = {
-  // ...existing tools
-  'my.tool': {
-    name: 'my.tool',
-    description: 'Does something useful',
-    argsSchema: MyToolArgsSchema,
-    requiresApproval: true,
-    defaultRisk: 'medium' as RiskLevel,
-  },
-};
-```
-
-2. Handle in n8n based on tool name
+1. Include it in the `tools` array of your `POST /chat` request
+2. Handle execution in n8n based on tool name
+3. Call `POST /tools/result` with the outcome
 
 ### Adding a New Provider
 

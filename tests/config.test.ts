@@ -11,7 +11,7 @@ const configSchema = z.object({
   databaseUrl: z.string().url(),
   qdrantUrl: z.string().url(),
   qdrantApiKey: z.string().optional(),
-  chatProvider: z.enum(['openai', 'anthropic', 'claude_cli']).default('openai'),
+  chatProvider: z.enum(['openai', 'anthropic', 'claude_cli']).default('claude_cli'),
   embeddingProvider: z.enum(['openai', 'ollama', 'mock']).default('openai'),
   openaiApiKey: z.string().optional(),
   openaiChatModel: z.string().default('gpt-4o'),
@@ -84,7 +84,7 @@ describe('Config Validation', () => {
     const config = parseConfig(validEnv);
     expect(config.port).toBe(3000);
     expect(config.host).toBe('0.0.0.0');
-    expect(config.chatProvider).toBe('openai');
+    expect(config.chatProvider).toBe('claude_cli');
     expect(config.embeddingProvider).toBe('openai');
     expect(config.embeddingDims).toBe(3072);
     expect(config.maxUploadSizeMb).toBe(50);

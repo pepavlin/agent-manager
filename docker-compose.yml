@@ -14,7 +14,7 @@ services:
       - AGENT_API_KEY=${AGENT_API_KEY}
       - DATABASE_URL=postgresql://agent:agent_password@postgres:5432/agent_manager
       - QDRANT_URL=http://qdrant:6333
-      - CHAT_PROVIDER=${CHAT_PROVIDER:-openai}
+      - CHAT_PROVIDER=${CHAT_PROVIDER:-claude_cli}
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_CHAT_MODEL=${OPENAI_CHAT_MODEL:-gpt-4o}
@@ -24,6 +24,7 @@ services:
       - CLAUDE_CLI_CMD=${CLAUDE_CLI_CMD:-claude}
       - CLAUDE_CLI_MODEL=${CLAUDE_CLI_MODEL:-haiku}
       - CLAUDE_CLI_TIMEOUT=${CLAUDE_CLI_TIMEOUT:-60000}
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
       - CLAUDE_OAUTH_TOKEN=${CLAUDE_OAUTH_TOKEN}
       - CLAUDE_OAUTH_REFRESH_TOKEN=${CLAUDE_OAUTH_REFRESH_TOKEN}
       - OLLAMA_BASE_URL=http://ollama:11434
