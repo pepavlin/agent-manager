@@ -40,7 +40,11 @@ async function ensureCollectionWithDims(
     if (exists) {
       // Verify dimensions match — recreate if they changed (e.g. provider switch)
       const info = await qdrant.getCollection(collectionName);
-      const existingDims = (info.config?.params?.vectors as { size?: number })?.size;
+      const vectorsConfig = info.config?.params?.vectors;
+      const existingDims = typeof vectorsConfig === 'object' && vectorsConfig !== null
+        ? (vectorsConfig as { size?: number }).size
+        : undefined;
+      logger.debug({ collection: collectionName, existingDims, requiredDims: dims, vectorsConfig: JSON.stringify(vectorsConfig) }, 'Checking collection dimensions');
       if (existingDims && existingDims !== dims) {
         logger.warn(
           { collection: collectionName, existingDims, requiredDims: dims },
